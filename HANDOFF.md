@@ -74,7 +74,7 @@ Linux host -> Python agent (psutil, 30 s) -> HTTPS POST /api/telemetry (Next.js 
 | # | Milestone | State |
 |---|---|---|
 | 1 | Docs: HANDOFF.md and CLAUDE.md updated, repo inspected, plan written | Done |
-| 2 | Backend code: migration `0002`, `/api/telemetry`, token generation UI, unit tests, `scripts/test-ingest.mjs` | **Code written and committed locally. Unit tests (7), lint, tsc and build pass. NOT yet verified against the real database: migration 0002 is not applied and `npm run test:ingest` has not been run** |
+| 2 | Backend code: migration `0002`, `/api/telemetry`, token generation UI, unit tests, `scripts/test-ingest.mjs` | **Code written and committed locally. Vitest suite (36 tests: unit and mocked-route), lint, tsc and build pass. NOT yet verified against the real database: migration 0002 is not applied and `npm run test:ingest` has not been run** |
 | 3 | Python agent (`agent/`): CPU/RAM/disk/network, dry-run, systemd unit, requirements, install docs | **Written. Verified locally on Windows against a mock HTTP endpoint (dry-run, send, wrong token, http refusal, missing config, unreachable). NOT yet run on Steve or against the real API** |
 | 4 | Dashboard: latest readings, last report, online/stale badge, 30 s refresh | **Code written, builds. NOT yet seen rendering with real data** |
 | 5 | Verification: apply 0002, run `test:ingest`, Steve end to end, invalid-token rejection on production, deploy | Not started |
@@ -86,7 +86,7 @@ Linux host -> Python agent (psutil, 30 s) -> HTTPS POST /api/telemetry (Next.js 
 
 ### Known constraints and issues
 
-- Node 24 LTS was installed on the dev machine on 2026-10-14 (winget). On Windows, open a new shell or refresh PATH if `node` is not found. `npm test` runs the unit tests; `npm run test:ingest` and `test:rls` need `.env.local` and are run by the user.
+- Node 24 LTS was installed on the dev machine on 2026-10-14 (winget). On Windows, open a new shell or refresh PATH if `node` is not found. `npm test` runs the vitest suite (unit tests plus `/api/telemetry` route tests with a mocked Supabase client); `npm run test:ingest` and `test:rls` need `.env.local` and are run by the user.
 - Migration `0002` must be applied to Supabase (SQL editor, or via the Supabase connector once the user enables it; confirm before applying). Rule 2 still applies: the migration is additive only.
 - Steve-side steps (install agent, create token, run the systemd service) and any check on the deployed site are done by the user (rules 1 and 4).
 - Dashboard subtitle now describes live readings; that wording is only accurate once monitoring is verified end to end.
@@ -118,5 +118,5 @@ scripts/test-rls.mjs   two-user RLS check
 proxy.ts        session refresh + route protection
 agent/          Python monitoring agent, systemd unit, install docs
 app/api/telemetry/  ingestion route
-tests/          unit tests (npm test); scripts/test-ingest.mjs integration check
+tests/          vitest unit + route tests (npm test); scripts/test-ingest.mjs integration check
 ```
