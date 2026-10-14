@@ -9,6 +9,14 @@ Metrics it cannot read are sent as `null` and shown as "n/a" in the dashboard, n
 1. Sign in, open the server's page and find **Monitoring agent**.
 2. Click **Generate agent token** and copy the token (shown once) and the **Server ID**.
 
+## Get the files onto the server
+
+Run this on the Linux server first (the later steps assume you are in this folder):
+
+```bash
+mkdir -p ~/llm-agent && cd ~/llm-agent && for f in llm_manager_agent.py requirements.txt llm-manager-agent.service llm-manager-agent.env.example; do curl -fsSLO "https://raw.githubusercontent.com/NightmarePaladin/LLM-Manager/main/agent/$f"; done
+```
+
 ## Install on Steve (Ubuntu/Debian style Linux)
 
 ```bash
