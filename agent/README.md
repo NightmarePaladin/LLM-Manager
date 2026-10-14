@@ -29,7 +29,7 @@ sudo python3 -m venv /opt/llm-manager-agent/venv
 sudo /opt/llm-manager-agent/venv/bin/pip install -r /opt/llm-manager-agent/requirements.txt
 ```
 
-Create the config (keep it root-only, since it contains the token):
+Easiest: on the server's page in the dashboard, click **Generate agent token** and copy the **One-command setup** box. Pasting it on the server creates or updates `/etc/llm-manager-agent.env` (root-only), keeps other settings, and restarts the agent. Or create the config by hand (keep it root-only, since it contains the token):
 
 ```bash
 sudo cp llm-manager-agent.env.example /etc/llm-manager-agent.env

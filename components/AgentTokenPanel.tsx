@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { KeyRound } from "lucide-react";
 import { createAgentToken, type TokenState } from "@/app/(app)/servers/agent-actions";
 import { CopyField } from "@/components/CopyField";
+import { buildConfigCommand } from "@/lib/agent-config";
 
 export function AgentTokenPanel({ serverId, apiUrl }: { serverId: string; apiUrl: string }) {
   const [state, action, pending] = useActionState<TokenState, FormData>(
@@ -15,7 +16,8 @@ export function AgentTokenPanel({ serverId, apiUrl }: { serverId: string; apiUrl
     <div className="w-full space-y-4">
       <div className="space-y-3">
         <p className="text-xs text-muted">
-          Put these three values in <span className="font-mono">/etc/llm-manager-agent.env</span> on the server.
+          Put these three values in <span className="font-mono">/etc/llm-manager-agent.env</span> on the server, or generate
+          a token to get a single command that does it for you.
         </p>
         <CopyField label="API URL" value={apiUrl} hint="LLM_MANAGER_API_URL" />
         <CopyField label="Server ID" value={serverId} hint="LLM_MANAGER_SERVER_ID" />
@@ -23,6 +25,16 @@ export function AgentTokenPanel({ serverId, apiUrl }: { serverId: string; apiUrl
           <div className="space-y-2">
             <CopyField label="Agent token" value={state.token} hint="LLM_MANAGER_TOKEN" />
             <p className="text-xs text-amber-400">Copy this token now. It is shown once and cannot be recovered.</p>
+            <CopyField
+              label="One-command setup"
+              value={buildConfigCommand({ apiUrl, serverId, token: state.token })}
+              hint="run on the server"
+            />
+            <p className="text-xs text-muted">
+              Paste this on the server (after installing the agent) to create or update the config file with all three
+              values and restart the agent. It keeps other settings, and the leading space keeps the token out of
+              your shell history.
+            </p>
           </div>
         ) : (
           <p className="text-xs text-muted">The token is created below and is shown only once.</p>
