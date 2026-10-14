@@ -74,15 +74,21 @@ Linux host -> Python agent (psutil, 30 s) -> HTTPS POST /api/telemetry (Next.js 
 | # | Milestone | State |
 |---|---|---|
 | 1 | Docs: HANDOFF.md and CLAUDE.md updated, repo inspected, plan written | Done |
-| 2 | Backend code: migration `0002`, `/api/telemetry`, token generation UI, unit tests, `scripts/test-ingest.mjs` | **Code written and committed locally. Vitest suite (36 tests: unit and mocked-route), lint, tsc and build pass. **Migration 0002 applied to the Supabase project on 2026-10-14** (structure verified: 3 tables with RLS, owner-only policies, no direct insert policy on metrics, `ingest_telemetry` is SECURITY DEFINER with empty search_path, and a bogus-token call returns `invalid_token`). **NOT yet verified end to end: `npm run test:ingest` has not been run** |
-| 3 | Python agent (`agent/`): CPU/RAM/disk/network, dry-run, systemd unit, requirements, install docs | **Written. Verified locally on Windows against a mock HTTP endpoint (dry-run, send, wrong token, http refusal, missing config, unreachable). NOT yet run on Steve or against the real API** |
-| 4 | Dashboard: latest readings, last report, online/stale badge, 30 s refresh | **Code written, builds. NOT yet seen rendering with real data** |
+| 2 | Backend code: migration `0002`, `/api/telemetry`, token generation UI, unit tests, `scripts/test-ingest.mjs` | **Code written and committed locally. Vitest suite (36 tests: unit and mocked-route), lint, tsc and build pass. **Migration 0002 applied to the Supabase project on 2026-10-14** (structure verified: 3 tables with RLS, owner-only policies, no direct insert policy on metrics, `ingest_telemetry` is SECURITY DEFINER with empty search_path, and a bogus-token call returns `invalid_token`). **Verified on localhost 2026-10-14 (see Local verification below). `npm run test:ingest` (user-run) and production are NOT yet verified** |
+| 3 | Python agent (`agent/`): CPU/RAM/disk/network, dry-run, systemd unit, requirements, install docs | **Written. Verified on Windows against a mock endpoint and against the local dev server + real Supabase (5 consecutive 10 s reports stored). NOT yet run on Steve or against production** |
+| 4 | Dashboard: latest readings, last report, online/stale badge, 30 s refresh | **Verified on localhost with real readings (Online, then Stale after the agent stopped). Not yet seen on the deployed site** |
 | 5 | Verification: apply 0002, run `test:ingest`, Steve end to end, invalid-token rejection on production, deploy | Not started |
 | 6 | Ollama status and loaded models | Planned |
 | 7 | AMD GPU/VRAM, CPU/GPU temperatures (optional, graceful when missing) | Planned |
 | 8 | Seven-day history charts, retention pruning, more servers (Proxmox hosts, VMs, LXC) | Planned |
 
 **Manual status removal (approved 2026-10-14):** app code no longer reads or writes `servers.status`; the StatusBadge was replaced by a monitoring badge derived from reports. The database column still exists (it defaults to `unknown`, so the app keeps working). `supabase/migrations/0003_drop_manual_status.sql` drops it and is **destructive: do not apply without asking the user to confirm at that moment.**
+
+### Local verification (2026-10-14, localhost only)
+
+Throwaway user `claude-local-test-187fd935@example.com` and server `local-test-pc` were created on localhost (which uses the real Supabase project). The real agent (run from this Windows PC, 10 s interval) sent 5 reports; all returned 200 and 5 rows were stored with values matching the agent output. Dashboard showed Online with the stored CPU/RAM/disk/network values, then Stale after about 90 s without reports. Token generation UI worked (token shown once). Rejections observed against the route: no token 401, unknown token 401, right token with wrong server id 401, cpu 500 returns 400. The revoke flow and cross-user isolation are covered by `test:ingest`, which the user still has to run.
+
+Leftover test data (delete only with user confirmation): the test user above, its server, 1 agent token and 5 metric rows (deleting the server cascades).
 
 ### Known constraints and issues
 
