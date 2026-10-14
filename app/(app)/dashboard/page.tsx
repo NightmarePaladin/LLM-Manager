@@ -3,6 +3,7 @@ import { Activity, CircleCheck, CircleHelp, Clock, Eye, Pencil, Plus, Server as 
 import { requireUser } from "@/lib/auth";
 import { MonitoringBadge } from "@/components/MonitoringBadge";
 import { AutoRefresh } from "@/components/AutoRefresh";
+import { SecretCode } from "@/components/SecretCode";
 import { OllamaBadge } from "@/components/OllamaStatus";
 import { formatAge, formatBytes, formatPercent, formatRate, formatTemp, nowMs } from "@/lib/format";
 import { getLatestMetrics } from "@/lib/metrics";
@@ -160,6 +161,10 @@ export default async function DashboardPage() {
           </div>
         )}
       </section>
+
+      <div className="flex justify-end border-t border-line pt-4">
+        <SecretCode />
+      </div>
     </div>
   );
 }

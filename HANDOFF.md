@@ -105,6 +105,10 @@ Steve (`a568fbb7-a3ab-4337-b6ad-f0cd927af07b`) first reported to the example pla
 3. Test data deleted on 2026-10-14 with explicit user approval: auth users `claude-local-test-187fd935`, `rls-a-82b3ad4c`, `rls-b-11e3776f`, `e2e-tester-1` (@example.com) and, by cascade, the `local-test-pc` server with its tokens and metrics. Remaining account: `bob@bob.com` (owns Steve). **Still needs explicit user confirmation:** applying `0003_drop_manual_status.sql`.
 4. Retention pruning (about 2,880 rows per server per day) needs a delete job; ask first.
 
+### Easter egg
+
+The dashboard has a "Got a secret code?" box (`components/SecretCode.tsx`, `lib/prank.ts`). Typing the code word shows a fake full-screen "Hacking the Pentagon" joke with scrolling nonsense text for 15 s, then "Just kidding." It is purely client-side cosmetic, makes no network calls, can be closed with Esc or a button, and slows down under `prefers-reduced-motion`. The code word is in `lib/prank.ts`. Verified in the browser on a temporary localhost page (wrong code, right code in any case, full speed, 15 s ending, Esc/button exit); not yet seen inside the signed-in dashboard.
+
 ### Known constraints and issues
 
 - Node 24 LTS was installed on the dev machine on 2026-10-14 (winget). On Windows, open a new shell or refresh PATH if `node` is not found. `npm test` runs the vitest suite (unit tests plus `/api/telemetry` route tests with a mocked Supabase client); `npm run test:ingest` and `test:rls` need `.env.local` and are run by the user.
