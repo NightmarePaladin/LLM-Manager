@@ -75,9 +75,9 @@ Linux host -> Python agent (psutil, 30 s) -> HTTPS POST /api/telemetry (Next.js 
 |---|---|---|
 | 1 | Docs: HANDOFF.md and CLAUDE.md updated, repo inspected, plan written | Done |
 | 2 | Backend code: migration `0002`, `/api/telemetry`, token generation UI, unit tests, `scripts/test-ingest.mjs` | **Code written and committed locally. Vitest suite (36 tests: unit and mocked-route), lint, tsc and build pass. **Migration 0002 applied to the Supabase project on 2026-10-14** (structure verified: 3 tables with RLS, owner-only policies, no direct insert policy on metrics, `ingest_telemetry` is SECURITY DEFINER with empty search_path, and a bogus-token call returns `invalid_token`). **Verified on localhost 2026-10-14 (see Local verification below). `npm run test:ingest` (user-run) and production are NOT yet verified** |
-| 3 | Python agent (`agent/`): CPU/RAM/disk/network, dry-run, systemd unit, requirements, install docs | **Written. Verified on Windows against a mock endpoint and against the local dev server + real Supabase (5 consecutive 10 s reports stored). NOT yet run on Steve or against production** |
+| 3 | Python agent (`agent/`): CPU/RAM/disk/network, dry-run, systemd unit, requirements, install docs | **Written. Verified on Windows against a mock endpoint and against the local dev server + real Supabase (5 consecutive 10 s reports stored). **Running on Steve (Linux, hostname jeeves) as a systemd service since 2026-10-14 ~15:34 UTC, reporting to production** |
 | 4 | Dashboard: latest readings, last report, online/stale badge, 30 s refresh | **Verified on localhost with real readings (Online, then Stale after the agent stopped). Not yet seen on the deployed site** |
-| 5 | Verification: apply 0002, run `test:ingest`, Steve end to end, invalid-token rejection on production, deploy | Not started |
+| 5 | Verification: apply 0002, run `test:ingest`, Steve end to end, invalid-token rejection on production, deploy | **Partly done.** 0002 applied; deployed (commit `ee7c66d`); production rejects missing/invalid tokens (401) and bad payloads (400); Steve's real readings land in `server_metrics` every ~30 s (verified in Supabase: 4 consecutive rows 30 s apart, last 7 s old at check time, values match Steve dry-run: CPU 0.1%, RAM 7.7%, disk 69%). **Still open: `npm run test:ingest` (user-run); user confirmation that the deployed dashboard shows Steve Online; `0003` drop of servers.status** |
 | 6 | Ollama status and loaded models | Planned |
 | 7 | AMD GPU/VRAM, CPU/GPU temperatures (optional, graceful when missing) | Planned |
 | 8 | Seven-day history charts, retention pruning, more servers (Proxmox hosts, VMs, LXC) | Planned |
@@ -89,6 +89,10 @@ Linux host -> Python agent (psutil, 30 s) -> HTTPS POST /api/telemetry (Next.js 
 Throwaway user `claude-local-test-187fd935@example.com` and server `local-test-pc` were created on localhost (which uses the real Supabase project). The real agent (run from this Windows PC, 10 s interval) sent 5 reports; all returned 200 and 5 rows were stored with values matching the agent output. Dashboard showed Online with the stored CPU/RAM/disk/network values, then Stale after about 90 s without reports. Token generation UI worked (token shown once). Rejections observed against the route: no token 401, unknown token 401, right token with wrong server id 401, cpu 500 returns 400. The revoke flow and cross-user isolation are covered by `test:ingest`, which the user still has to run.
 
 Leftover test data (delete only with user confirmation): the test user above, its server, 1 agent token and 5 metric rows (deleting the server cascades).
+
+### Steve production verification (2026-10-14)
+
+Steve (`a568fbb7-a3ab-4337-b6ad-f0cd927af07b`) first reported to the example placeholder domain (config not edited), got 401, and that token was revoked. After fixing the config, Steve reports to `https://llm-manager-paladins2.vercel.app/api/telemetry` and rows arrive about every 30 s. The agent now refuses to run with example placeholder values. An unused extra token for Steve is still active (revoke it from the UI or ask the user before revoking).
 
 ### Known constraints and issues
 
