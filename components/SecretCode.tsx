@@ -5,7 +5,6 @@ import { KeyRound, X } from "lucide-react";
 import { isSecretCode, nonsenseLine } from "@/lib/prank";
 
 const MAX_LINES = 80;
-const PRANK_SECONDS = 15;
 
 /** A joke: typing the secret code shows a fake "hacking" screen. Purely cosmetic and client-side. */
 export function SecretCode() {
@@ -56,7 +55,6 @@ export function SecretCode() {
 
 function HackingScreen({ onClose }: { onClose: () => void }) {
   const [lines, setLines] = useState<string[]>([]);
-  const [done, setDone] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -65,7 +63,6 @@ function HackingScreen({ onClose }: { onClose: () => void }) {
       () => setLines((prev) => [...prev, nonsenseLine(Math.random)].slice(-MAX_LINES)),
       reduce ? 200 : 45
     );
-    const end = setTimeout(() => setDone(true), PRANK_SECONDS * 1000);
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
     closeRef.current?.focus();
@@ -73,7 +70,6 @@ function HackingScreen({ onClose }: { onClose: () => void }) {
     document.body.style.overflow = "hidden";
     return () => {
       clearInterval(tick);
-      clearTimeout(end);
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = previousOverflow;
     };
@@ -87,15 +83,9 @@ function HackingScreen({ onClose }: { onClose: () => void }) {
       className="fixed inset-0 z-50 flex flex-col bg-black p-4 font-mono text-green-400 sm:p-8"
     >
       <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-wider sm:text-4xl">
-            {done ? "Just kidding." : "Hacking the Pentagon"}
-            {!done && <span className="motion-safe:animate-pulse">...</span>}
-          </h2>
-          <p className="mt-1 text-xs text-green-600">
-            {done ? "Nothing was hacked. It is only a joke screen." : "This is a joke. Press Esc to bail out."}
-          </p>
-        </div>
+        <h2 className="text-2xl font-bold tracking-wider sm:text-4xl">
+          Hacking the Pentagon<span className="motion-safe:animate-pulse">...</span>
+        </h2>
         <button
           ref={closeRef}
           type="button"
@@ -103,7 +93,7 @@ function HackingScreen({ onClose }: { onClose: () => void }) {
           className="inline-flex items-center gap-1.5 rounded-lg border border-green-700 px-3 py-1.5 text-xs text-green-300 hover:bg-green-900/40 focus-visible:outline-2 focus-visible:outline-green-400"
         >
           <X className="size-4" aria-hidden />
-          {done ? "Back to the dashboard" : "Exit"}
+          Exit
         </button>
       </div>
 

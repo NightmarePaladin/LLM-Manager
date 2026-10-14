@@ -107,7 +107,7 @@ Steve (`a568fbb7-a3ab-4337-b6ad-f0cd927af07b`) first reported to the example pla
 
 ### Easter egg
 
-The dashboard has a "Got a secret code?" box (`components/SecretCode.tsx`, `lib/prank.ts`). Typing the code word shows a fake full-screen "Hacking the Pentagon" joke with scrolling nonsense text for 15 s, then "Just kidding." It is purely client-side cosmetic, makes no network calls, can be closed with Esc or a button, and slows down under `prefers-reduced-motion`. The code word is in `lib/prank.ts`. Verified in the browser on a temporary localhost page (wrong code, right code in any case, full speed, 15 s ending, Esc/button exit); not yet seen inside the signed-in dashboard.
+The dashboard has a "Got a secret code?" box (`components/SecretCode.tsx`, `lib/prank.ts`). Typing the code word shows a fake full-screen "Hacking the Pentagon" joke with scrolling nonsense text until the viewer presses Esc or clicks Exit (no on-screen disclaimer by the owner's choice; the dialog's accessible name says it is a joke). It is purely client-side cosmetic, makes no network calls, can be closed with Esc or a button, and slows down under `prefers-reduced-motion`. The code word is in `lib/prank.ts`. Verified in the browser on a temporary localhost page (wrong code, right code in any case, full speed, keeps scrolling past 15 s with no disclaimer text, Esc/button exit); not yet seen inside the signed-in dashboard.
 
 ### Known constraints and issues
 
