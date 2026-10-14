@@ -26,6 +26,7 @@ export function parseBearer(header: string | null): string | null {
 const percent = z.number().min(0).max(100);
 const nonNegative = z.number().min(0).finite();
 const bytes = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
+const celsius = z.number().min(-50).max(150);
 
 const ollamaModelSchema = z.object({
   name: z.string().min(1).max(100),
@@ -52,6 +53,12 @@ export const metricsSchema = z.object({
   net_rx_bps: nonNegative.nullish(),
   uptime_seconds: bytes.nullish(),
   agent_version: z.string().max(32).nullish(),
+  gpu_percent: percent.nullish(),
+  vram_used_bytes: bytes.nullish(),
+  vram_total_bytes: bytes.nullish(),
+  gpu_temp_c: celsius.nullish(),
+  gpu_hotspot_c: celsius.nullish(),
+  cpu_temp_c: celsius.nullish(),
   ollama_up: z.boolean().nullish(),
   ollama_version: z.string().max(32).nullish(),
   ollama_models: z.array(ollamaModelSchema).max(20).nullish(),

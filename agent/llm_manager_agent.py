@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """LLM-Manager monitoring agent.
 
-Collects CPU, RAM, disk and network readings with psutil and POSTs them to the
+Collects CPU, RAM, disk, network, CPU/GPU temperature and AMD GPU/VRAM readings with psutil and Linux sysfs and POSTs them to the
 LLM-Manager ingestion endpoint every 30 seconds. Unavailable metrics are sent as
 null, never as zero. The agent only holds its own per-server token: it has no
 Supabase credentials. Works on standard Linux, Proxmox VE hosts, VMs and LXC
@@ -24,9 +24,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 import logging
 import os
+import re
 import signal
 import sys
 import threading
@@ -38,7 +40,7 @@ import uuid
 
 import psutil
 
-AGENT_VERSION = "0.2.0"
+AGENT_VERSION = "0.3.0"
 DEFAULT_INTERVAL = 30.0
 REQUEST_TIMEOUT = 10.0
 WARMUP_SECONDS = 3.0
@@ -150,6 +152,113 @@ def collect_ollama(base_url: str) -> dict:
     return {"ollama_up": True, "ollama_version": _text(version, 32), "ollama_models": models}
 
 
+SYS_ROOT = "/sys"
+AMD_VENDOR_ID = "0x1002"
+_CARD_RE = re.compile(r"^card\d+$")
+
+
+def _read_text(path: str):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return fh.read().strip()
+    except OSError:
+        return None
+
+
+def _read_int(path: str):
+    text = _read_text(path)
+    try:
+        return int(text, 0) if text is not None else None
+    except ValueError:
+        return None
+
+
+def _temp_c(milli):
+    """sysfs hwmon reports millidegrees C; reject nonsense readings."""
+    if milli is None:
+        return None
+    c = milli / 1000.0
+    return round(c, 1) if -50.0 <= c <= 150.0 else None
+
+
+def find_amd_gpu(sys_root: str = SYS_ROOT):
+    """Device dir of the AMD GPU with the most VRAM (skips iGPUs when a dGPU exists)."""
+    drm = os.path.join(sys_root, "class", "drm")
+    try:
+        names = sorted(n for n in os.listdir(drm) if _CARD_RE.match(n))
+    except OSError:
+        return None
+    best, best_vram = None, -1
+    for name in names:
+        dev = os.path.join(drm, name, "device")
+        if _read_text(os.path.join(dev, "vendor")) != AMD_VENDOR_ID:
+            continue
+        vram = _read_int(os.path.join(dev, "mem_info_vram_total")) or 0
+        if vram > best_vram:
+            best, best_vram = dev, vram
+    return best
+
+
+def collect_gpu(sys_root: str = SYS_ROOT) -> dict:
+    """AMD GPU utilisation, VRAM and temperatures from the amdgpu driver (no root needed).
+
+    Every value is None when unavailable (no AMD GPU, other driver, container without
+    /sys access): unavailable is never reported as zero.
+    """
+    out = {
+        "gpu_percent": None,
+        "vram_used_bytes": None,
+        "vram_total_bytes": None,
+        "gpu_temp_c": None,
+        "gpu_hotspot_c": None,
+    }
+    dev = find_amd_gpu(sys_root)
+    if dev is None:
+        return out
+
+    busy = _read_int(os.path.join(dev, "gpu_busy_percent"))
+    out["gpu_percent"] = float(busy) if busy is not None and 0 <= busy <= 100 else None
+    used = _read_int(os.path.join(dev, "mem_info_vram_used"))
+    total = _read_int(os.path.join(dev, "mem_info_vram_total"))
+    if used is not None and total and 0 <= used <= total:
+        out["vram_used_bytes"], out["vram_total_bytes"] = used, total
+
+    labelled = {}
+    first = None
+    for hwmon in sorted(glob.glob(os.path.join(dev, "hwmon", "hwmon*"))):
+        for path in sorted(glob.glob(os.path.join(hwmon, "temp*_input"))):
+            value = _temp_c(_read_int(path))
+            if value is None:
+                continue
+            label = _read_text(path.replace("_input", "_label"))
+            if label:
+                labelled.setdefault(label.lower(), value)
+            if first is None:
+                first = value
+    out["gpu_temp_c"] = labelled.get("edge", first)
+    out["gpu_hotspot_c"] = labelled.get("junction")
+    return out
+
+
+def collect_cpu_temp():
+    """CPU temperature via psutil sensors (k10temp on AMD, coretemp on Intel); None if absent."""
+    try:
+        sensors = psutil.sensors_temperatures()  # not available on every platform
+    except (AttributeError, OSError, NotImplementedError):
+        return None
+    for chip in ("k10temp", "zenpower", "coretemp", "cpu_thermal", "cpu-thermal"):
+        entries = sensors.get(chip)
+        if not entries:
+            continue
+        by_label = {(e.label or "").lower(): e.current for e in entries if e.current is not None}
+        for label in ("tdie", "tctl", "package id 0"):
+            if label in by_label:
+                return _temp_c(by_label[label] * 1000)
+        if by_label:
+            return _temp_c(max(by_label.values()) * 1000)
+    return None
+
+
 def collect(net: NetworkRate, disk_path: str, cpu_interval: float | None = None, ollama_url: str = "") -> dict:
     """Gather one reading. Each metric fails independently to None."""
     metrics: dict = {"agent_version": AGENT_VERSION}
@@ -181,6 +290,17 @@ def collect(net: NetworkRate, disk_path: str, cpu_interval: float | None = None,
         metrics["uptime_seconds"] = max(0, int(time.time() - psutil.boot_time()))
     except Exception:  # noqa: BLE001
         metrics["uptime_seconds"] = None
+
+    try:
+        metrics["cpu_temp_c"] = collect_cpu_temp()
+    except Exception as exc:  # noqa: BLE001 - a broken sensor must not stop reporting
+        log.warning("cpu temperature unavailable: %s", exc)
+        metrics["cpu_temp_c"] = None
+
+    try:
+        metrics.update(collect_gpu())
+    except Exception as exc:  # noqa: BLE001
+        log.warning("gpu metrics unavailable: %s", exc)
 
     metrics.update(collect_ollama(ollama_url))
     return metrics

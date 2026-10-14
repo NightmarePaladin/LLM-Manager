@@ -91,6 +91,15 @@ The agent only reads `/api/version` and `/api/ps`; it never loads or runs models
 
 Tests: `python -m unittest agent/test_agent.py` (needs psutil).
 
+## GPU and temperatures
+
+Collected automatically when available, with no configuration and no root:
+
+- **AMD GPU** (amdgpu driver): utilisation, VRAM used/total, edge and junction temperature, read from `/sys/class/drm`. If a machine has both an integrated and a discrete AMD GPU, the one with the most VRAM is used. Other vendors are ignored.
+- **CPU temperature**: via psutil (`k10temp` on AMD, `coretemp` on Intel).
+
+Anything the machine does not expose (VMs, LXC containers, no sensors) is reported as unavailable and shown as `n/a` or hidden, never as zero. Check what a machine reports with `--dry-run`.
+
 ## Not yet included
 
-AMD GPU and VRAM, and temperatures, are planned and are not collected yet.
+NVIDIA and Intel GPU metrics are not collected.

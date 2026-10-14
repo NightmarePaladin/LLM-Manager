@@ -2,9 +2,13 @@
 
 import json
 import os
+import shutil
 import sys
+import tempfile
 import threading
 import unittest
+from types import SimpleNamespace
+from unittest import mock
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -105,11 +109,117 @@ class OllamaCollection(unittest.TestCase):
         self.assertIsNone(out["ollama_models"][0]["size_vram_bytes"])
 
 
+def write(path, text):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+
+
+def make_card(root, name, vendor, vram_total=None, vram_used=None, busy=None, temps=None):
+    dev = os.path.join(root, "class", "drm", name, "device")
+    write(os.path.join(dev, "vendor"), vendor + "\n")
+    if vram_total is not None:
+        write(os.path.join(dev, "mem_info_vram_total"), f"{vram_total}\n")
+    if vram_used is not None:
+        write(os.path.join(dev, "mem_info_vram_used"), f"{vram_used}\n")
+    if busy is not None:
+        write(os.path.join(dev, "gpu_busy_percent"), f"{busy}\n")
+    for i, (label, milli) in enumerate((temps or {}).items(), start=1):
+        hw = os.path.join(dev, "hwmon", "hwmon3")
+        write(os.path.join(hw, f"temp{i}_input"), f"{milli}\n")
+        if label:
+            write(os.path.join(hw, f"temp{i}_label"), label + "\n")
+
+
+class GpuCollection(unittest.TestCase):
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.root, True)
+
+    def test_reads_amd_dgpu_utilisation_vram_and_temps(self):
+        make_card(self.root, "card1", "0x1002", 17_163_091_968, 4_000_000_000, 37,
+                  {"edge": 52000, "junction": 61000, "mem": 70000})
+        out = agent.collect_gpu(self.root)
+        self.assertEqual(out["gpu_percent"], 37.0)
+        self.assertEqual(out["vram_total_bytes"], 17_163_091_968)
+        self.assertEqual(out["vram_used_bytes"], 4_000_000_000)
+        self.assertEqual(out["gpu_temp_c"], 52.0)
+        self.assertEqual(out["gpu_hotspot_c"], 61.0)
+
+    def test_idle_gpu_zero_percent_is_a_real_zero(self):
+        make_card(self.root, "card1", "0x1002", 1000, 0, 0, {"edge": 40000})
+        out = agent.collect_gpu(self.root)
+        self.assertEqual(out["gpu_percent"], 0.0)
+        self.assertEqual(out["vram_used_bytes"], 0)
+
+    def test_prefers_the_gpu_with_the_most_vram_over_an_igpu(self):
+        make_card(self.root, "card0", "0x1002", 536_870_912, 100, 5, {"edge": 45000})  # iGPU
+        make_card(self.root, "card1", "0x1002", 17_163_091_968, 200, 60, {"edge": 55000})
+        out = agent.collect_gpu(self.root)
+        self.assertEqual(out["vram_total_bytes"], 17_163_091_968)
+        self.assertEqual(out["gpu_percent"], 60.0)
+
+    def test_ignores_non_amd_cards_and_connector_entries(self):
+        make_card(self.root, "card0", "0x10de", 8_000_000_000, 1, 50, {"edge": 50000})  # NVIDIA
+        make_card(self.root, "card0-DP-1", "0x1002", 99, 1, 50)  # connector, not a card
+        out = agent.collect_gpu(self.root)
+        self.assertTrue(all(v is None for v in out.values()))
+
+    def test_missing_sysfs_or_files_are_none_not_zero(self):
+        self.assertTrue(all(v is None for v in agent.collect_gpu(os.path.join(self.root, "nope")).values()))
+        make_card(self.root, "card1", "0x1002")  # AMD card exposing nothing
+        out = agent.collect_gpu(self.root)
+        self.assertTrue(all(v is None for v in out.values()))
+
+    def test_unlabelled_temperature_falls_back_to_first_and_rejects_nonsense(self):
+        make_card(self.root, "card1", "0x1002", 1000, 1, 1, {"": 48000})
+        self.assertEqual(agent.collect_gpu(self.root)["gpu_temp_c"], 48.0)
+        bad = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, bad, True)
+        make_card(bad, "card1", "0x1002", 1000, 1, 1, {"edge": 999000, "junction": -300000})
+        out = agent.collect_gpu(bad)
+        self.assertIsNone(out["gpu_temp_c"])
+        self.assertIsNone(out["gpu_hotspot_c"])
+
+    def test_out_of_range_values_are_unavailable(self):
+        make_card(self.root, "card1", "0x1002", 1000, 5000, 250, {})  # used > total, busy > 100
+        out = agent.collect_gpu(self.root)
+        self.assertIsNone(out["gpu_percent"])
+        self.assertIsNone(out["vram_used_bytes"])
+
+
+def sensors(**chips):
+    return {name: [SimpleNamespace(label=label, current=cur) for label, cur in entries] for name, entries in chips.items()}
+
+
+class CpuTemperature(unittest.TestCase):
+    def check(self, value):
+        with mock.patch.object(agent.psutil, "sensors_temperatures", create=True, return_value=value):
+            return agent.collect_cpu_temp()
+
+    def test_amd_k10temp_prefers_tdie_then_tctl(self):
+        self.assertEqual(self.check(sensors(k10temp=[("Tctl", 71.0), ("Tdie", 55.5)])), 55.5)
+        self.assertEqual(self.check(sensors(k10temp=[("Tctl", 71.0), ("Tccd1", 60.0)])), 71.0)
+
+    def test_intel_coretemp_uses_package(self):
+        self.assertEqual(self.check(sensors(coretemp=[("Core 0", 50.0), ("Package id 0", 58.0)])), 58.0)
+
+    def test_no_sensors_is_none(self):
+        self.assertIsNone(self.check({}))
+        self.assertIsNone(self.check(sensors(acpitz=[("", 30.0)])))
+
+    def test_platform_without_sensor_support_is_none(self):
+        with mock.patch.object(agent.psutil, "sensors_temperatures", create=True, side_effect=NotImplementedError):
+            self.assertIsNone(agent.collect_cpu_temp())
+
+
 class CollectIncludesOllama(unittest.TestCase):
     def test_default_collect_has_null_ollama_fields(self):
         m = agent.collect(agent.NetworkRate(), "/")
         self.assertIsNone(m["ollama_up"])
         self.assertIsNone(m["ollama_models"])
+        for key in ("cpu_temp_c", "gpu_percent", "vram_used_bytes", "vram_total_bytes", "gpu_temp_c", "gpu_hotspot_c"):
+            self.assertIn(key, m)
 
 
 if __name__ == "__main__":

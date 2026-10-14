@@ -32,6 +32,12 @@ export type ServerMetric = {
   net_rx_bps: number | null;
   uptime_seconds: number | null;
   agent_version: string | null;
+  gpu_percent: number | null;
+  vram_used_bytes: number | null;
+  vram_total_bytes: number | null;
+  gpu_temp_c: number | null;
+  gpu_hotspot_c: number | null;
+  cpu_temp_c: number | null;
   ollama_up: boolean | null;
   ollama_version: string | null;
   ollama_models: OllamaModel[] | null;

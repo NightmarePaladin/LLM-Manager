@@ -6,8 +6,10 @@ import { requireUser } from "@/lib/auth";
 import { MonitoringBadge } from "@/components/MonitoringBadge";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { OllamaBadge } from "@/components/OllamaStatus";
+import { HistorySection } from "@/components/HistorySection";
+import { parseRange } from "@/lib/chart";
 import { AgentTokenPanel } from "@/components/AgentTokenPanel";
-import { UNAVAILABLE, formatAge, formatBytes, formatPercent, formatRate, formatUptime } from "@/lib/format";
+import { UNAVAILABLE, formatAge, formatBytes, formatPercent, formatRate, formatTemp, formatUptime } from "@/lib/format";
 import { getLatestMetrics } from "@/lib/metrics";
 import { REFRESH_INTERVAL_MS, monitoringState } from "@/lib/telemetry";
 import { revokeAgentTokens } from "@/app/(app)/servers/agent-actions";
@@ -21,10 +23,11 @@ export default async function ServerDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; range?: string }>;
 }) {
   const { id } = await params;
-  const { error } = await searchParams;
+  const { error, range: rangeParam } = await searchParams;
+  const range = parseRange(rangeParam);
   if (!UUID_RE.test(id)) notFound();
 
   const { supabase } = await requireUser();
@@ -52,6 +55,31 @@ export default async function ServerDetailPage({
         { label: "Network download", value: formatRate(latest.net_rx_bps) },
         { label: "Network upload", value: formatRate(latest.net_tx_bps) },
         { label: "Uptime", value: formatUptime(latest.uptime_seconds) },
+        // Hardware readings only appear when the agent could read them (never as zero).
+        ...(latest.cpu_temp_c != null ? [{ label: "CPU temperature", value: formatTemp(latest.cpu_temp_c) }] : []),
+        ...(latest.gpu_percent != null ? [{ label: "GPU utilisation", value: formatPercent(latest.gpu_percent) }] : []),
+        ...(latest.vram_total_bytes != null
+          ? [
+              {
+                label: "VRAM",
+                value: `${formatBytes(latest.vram_used_bytes)} / ${formatBytes(latest.vram_total_bytes)}${
+                  latest.vram_used_bytes != null && latest.vram_total_bytes
+                    ? ` (${((latest.vram_used_bytes / latest.vram_total_bytes) * 100).toFixed(1)}%)`
+                    : ""
+                }`,
+              },
+            ]
+          : []),
+        ...(latest.gpu_temp_c != null
+          ? [
+              {
+                label: "GPU temperature",
+                value: `${formatTemp(latest.gpu_temp_c)}${
+                  latest.gpu_hotspot_c != null ? ` (hotspot ${formatTemp(latest.gpu_hotspot_c)})` : ""
+                }`,
+              },
+            ]
+          : []),
       ]
     : [];
 
@@ -66,7 +94,7 @@ export default async function ServerDetailPage({
   ];
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5">
+    <div className="mx-auto max-w-5xl space-y-5">
       <AutoRefresh intervalMs={REFRESH_INTERVAL_MS} />
       <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-white">
         <ArrowLeft className="size-4" aria-hidden />
@@ -113,6 +141,8 @@ export default async function ServerDetailPage({
           </dl>
         )}
       </section>
+
+      <HistorySection supabase={supabase} serverId={id} range={range} />
 
       {latest?.ollama_up != null && (
         <section className="card p-5" aria-labelledby="ollama-heading">

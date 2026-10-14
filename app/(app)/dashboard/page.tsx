@@ -4,7 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { MonitoringBadge } from "@/components/MonitoringBadge";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { OllamaBadge } from "@/components/OllamaStatus";
-import { formatAge, formatPercent, formatRate, nowMs } from "@/lib/format";
+import { formatAge, formatBytes, formatPercent, formatRate, formatTemp, nowMs } from "@/lib/format";
 import { getLatestMetrics } from "@/lib/metrics";
 import { REFRESH_INTERVAL_MS, monitoringState } from "@/lib/telemetry";
 import type { Server } from "@/lib/types";
@@ -84,7 +84,7 @@ export default async function DashboardPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[72rem] text-left text-sm">
+            <table className="w-full min-w-[88rem] text-left text-sm">
               <thead className="text-xs uppercase tracking-wider text-muted">
                 <tr className="border-b border-line">
                   <th className="px-4 py-3 font-medium">Name</th>
@@ -94,6 +94,8 @@ export default async function DashboardPage() {
                   <th className="px-4 py-3 font-medium">CPU</th>
                   <th className="px-4 py-3 font-medium">RAM</th>
                   <th className="px-4 py-3 font-medium">Disk</th>
+                  <th className="px-4 py-3 font-medium">GPU / VRAM</th>
+                  <th className="px-4 py-3 font-medium">Temp CPU / GPU</th>
                   <th className="px-4 py-3 font-medium">Network ↓ / ↑</th>
                   <th className="px-4 py-3 font-medium">Last report</th>
                   <th className="sticky right-0 bg-surface px-4 py-3 text-right font-medium shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.6)]">Actions</th>
@@ -118,6 +120,23 @@ export default async function DashboardPage() {
                     <td className="px-4 py-3 tabular-nums text-zinc-300">{m ? formatPercent(m.cpu_percent) : "—"}</td>
                     <td className="px-4 py-3 tabular-nums text-zinc-300">{m ? formatPercent(m.ram_percent) : "—"}</td>
                     <td className="px-4 py-3 tabular-nums text-zinc-300">{m ? formatPercent(m.disk_percent) : "—"}</td>
+                    <td className="px-4 py-3 tabular-nums text-zinc-300">
+                      {m && m.gpu_percent != null ? (
+                        <>
+                          {formatPercent(m.gpu_percent)}
+                          <div className="text-xs text-muted">
+                            {formatBytes(m.vram_used_bytes)} / {formatBytes(m.vram_total_bytes)}
+                          </div>
+                        </>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="px-4 py-3 tabular-nums text-zinc-300">
+                      {m && (m.cpu_temp_c != null || m.gpu_temp_c != null)
+                        ? `${formatTemp(m.cpu_temp_c)} / ${formatTemp(m.gpu_temp_c)}`
+                        : "—"}
+                    </td>
                     <td className="px-4 py-3 tabular-nums text-zinc-300">
                       {m ? `${formatRate(m.net_rx_bps)} / ${formatRate(m.net_tx_bps)}` : "—"}
                     </td>

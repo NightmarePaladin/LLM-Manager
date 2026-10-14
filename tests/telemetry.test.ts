@@ -66,6 +66,34 @@ describe("telemetry payload", () => {
   });
 });
 
+describe("gpu and temperature fields", () => {
+  it("accepts real values, including a genuine zero, and absent ones become null", () => {
+    const parsed = telemetryBodySchema.parse({
+      server_id: SERVER_ID,
+      metrics: { gpu_percent: 0, vram_used_bytes: 0, vram_total_bytes: 17_163_091_968, gpu_temp_c: 52.5, gpu_hotspot_c: 61, cpu_temp_c: 48.2 },
+    });
+    const n = normaliseMetrics(parsed.metrics);
+    expect(n.gpu_percent).toBe(0);
+    expect(n.vram_used_bytes).toBe(0);
+    expect(n.gpu_temp_c).toBe(52.5);
+    const empty = normaliseMetrics(telemetryBodySchema.parse({ server_id: SERVER_ID, metrics: {} }).metrics);
+    for (const key of ["gpu_percent", "vram_used_bytes", "vram_total_bytes", "gpu_temp_c", "gpu_hotspot_c", "cpu_temp_c"] as const) {
+      expect(empty[key]).toBeNull();
+    }
+  });
+
+  it.each([
+    ["gpu over 100", { gpu_percent: 101 }],
+    ["negative vram", { vram_used_bytes: -1 }],
+    ["fractional vram", { vram_total_bytes: 1.5 }],
+    ["absurd temperature", { gpu_temp_c: 900 }],
+    ["freezing nonsense", { cpu_temp_c: -300 }],
+    ["string temperature", { cpu_temp_c: "hot" }],
+  ])("rejects invalid values: %s", (_label, metrics) => {
+    expect(telemetryBodySchema.safeParse({ server_id: SERVER_ID, metrics }).success).toBe(false);
+  });
+});
+
 describe("ollama fields", () => {
   const model = { name: "llama3:8b", size_bytes: 6_000_000_000, size_vram_bytes: 5_500_000_000, parameter_size: "8.0B", quantization: "Q4_0" };
 

@@ -4,6 +4,10 @@ export function formatPercent(v: number | null | undefined): string {
   return v == null ? UNAVAILABLE : `${v.toFixed(1)}%`;
 }
 
+export function formatTemp(v: number | null | undefined): string {
+  return v == null ? UNAVAILABLE : `${v.toFixed(0)}°C`;
+}
+
 export function formatBytes(v: number | null | undefined): string {
   if (v == null) return UNAVAILABLE;
   const units = ["B", "KB", "MB", "GB", "TB"];
