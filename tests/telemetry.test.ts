@@ -66,6 +66,43 @@ describe("telemetry payload", () => {
   });
 });
 
+describe("ollama fields", () => {
+  const model = { name: "llama3:8b", size_bytes: 6_000_000_000, size_vram_bytes: 5_500_000_000, parameter_size: "8.0B", quantization: "Q4_0" };
+
+  it("accepts running, down and not-monitored states", () => {
+    for (const metrics of [
+      { ollama_up: true, ollama_version: "0.12.3", ollama_models: [model] },
+      { ollama_up: true, ollama_version: "0.12.3", ollama_models: [] },
+      { ollama_up: false, ollama_version: null, ollama_models: null },
+      { ollama_up: null, ollama_version: null, ollama_models: null },
+      {},
+    ]) {
+      expect(telemetryBodySchema.safeParse({ server_id: SERVER_ID, metrics }).success).toBe(true);
+    }
+  });
+
+  it("keeps false and an empty model list instead of turning them into null", () => {
+    const down = normaliseMetrics(telemetryBodySchema.parse({ server_id: SERVER_ID, metrics: { ollama_up: false } }).metrics);
+    expect(down.ollama_up).toBe(false);
+    const empty = normaliseMetrics(telemetryBodySchema.parse({ server_id: SERVER_ID, metrics: { ollama_models: [] } }).metrics);
+    expect(empty.ollama_models).toEqual([]);
+    const absent = normaliseMetrics(telemetryBodySchema.parse({ server_id: SERVER_ID, metrics: {} }).metrics);
+    expect(absent.ollama_up).toBeNull();
+    expect(absent.ollama_models).toBeNull();
+  });
+
+  it.each([
+    ["string up", { ollama_up: "yes" }],
+    ["models not an array", { ollama_models: "llama3" }],
+    ["model without a name", { ollama_models: [{ size_bytes: 1 }] }],
+    ["negative size", { ollama_models: [{ ...model, size_bytes: -1 }] }],
+    ["too many models", { ollama_models: Array.from({ length: 21 }, (_, i) => ({ name: `m${i}` })) }],
+    ["long version", { ollama_version: "v".repeat(33) }],
+  ])("rejects invalid ollama data: %s", (_label, metrics) => {
+    expect(telemetryBodySchema.safeParse({ server_id: SERVER_ID, metrics }).success).toBe(false);
+  });
+});
+
 describe("monitoringState", () => {
   const now = Date.parse("2026-10-14T12:00:00Z");
   const ago = (ms: number) => new Date(now - ms).toISOString();

@@ -27,6 +27,15 @@ const percent = z.number().min(0).max(100);
 const nonNegative = z.number().min(0).finite();
 const bytes = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 
+const ollamaModelSchema = z.object({
+  name: z.string().min(1).max(100),
+  size_bytes: bytes.nullish(),
+  size_vram_bytes: bytes.nullish(),
+  parameter_size: z.string().max(32).nullish(),
+  quantization: z.string().max(32).nullish(),
+  expires_at: z.string().max(64).nullish(),
+});
+
 /**
  * Every metric is optional and nullable: a missing or null value means
  * "unavailable" and is stored as NULL, never as zero.
@@ -43,6 +52,9 @@ export const metricsSchema = z.object({
   net_rx_bps: nonNegative.nullish(),
   uptime_seconds: bytes.nullish(),
   agent_version: z.string().max(32).nullish(),
+  ollama_up: z.boolean().nullish(),
+  ollama_version: z.string().max(32).nullish(),
+  ollama_models: z.array(ollamaModelSchema).max(20).nullish(),
 });
 
 export const telemetryBodySchema = z.object({
@@ -51,11 +63,12 @@ export const telemetryBodySchema = z.object({
 });
 
 export type Metrics = z.infer<typeof metricsSchema>;
+export type OllamaModel = z.infer<typeof ollamaModelSchema>;
 
 /** Normalises undefined to null so the DB function sees explicit nulls. */
-export function normaliseMetrics(m: Metrics): Record<keyof Metrics, number | string | null> {
+export function normaliseMetrics(m: Metrics): Record<keyof Metrics, unknown> {
   const keys = Object.keys(metricsSchema.shape) as (keyof Metrics)[];
-  return Object.fromEntries(keys.map((k) => [k, m[k] ?? null])) as Record<keyof Metrics, number | string | null>;
+  return Object.fromEntries(keys.map((k) => [k, m[k] ?? null])) as Record<keyof Metrics, unknown>;
 }
 
 export type MonitoringState = "online" | "stale" | "not_monitored";

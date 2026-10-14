@@ -65,6 +65,7 @@ The agent logs only failures (and recovery), never the token. Within about a min
 |---|---|
 | `LLM_MANAGER_INTERVAL` | Seconds between reports. Default 30, minimum 10. |
 | `LLM_MANAGER_DISK_PATH` | Mount point to report. Default `/`. |
+| `LLM_MANAGER_OLLAMA_URL` | Ollama API base, e.g. `http://127.0.0.1:11434`. Unset = Ollama is not monitored (shown as a dash, never as "down"). |
 | `--dry-run` | Print one reading, send nothing. |
 | `--once` | Send one reading and exit (exit code 1 if it failed). |
 | `-v` | Log every successful report. |
@@ -76,6 +77,18 @@ The agent logs only failures (and recovery), never the token. Within about a min
 - Stale in the dashboard: no valid report for 90 s. Check `journalctl -u llm-manager-agent` and network access to the Vercel domain.
 - Proxmox host: network counts physical NICs only, so bridge and guest traffic is not double counted. In an LXC container, the container's own interface is used.
 
+## Monitor Ollama (optional)
+
+Set `LLM_MANAGER_OLLAMA_URL` to report whether Ollama answers (Running / Down) and which models are loaded in memory (name, size, how much is in VRAM, parameters, quantization). Run this on the server that hosts Ollama, after updating the agent to 0.2.0 or newer:
+
+```bash
+sudo sed -i '/^LLM_MANAGER_OLLAMA_URL=/d' /etc/llm-manager-agent.env && echo 'LLM_MANAGER_OLLAMA_URL=http://127.0.0.1:11434' | sudo tee -a /etc/llm-manager-agent.env >/dev/null && sudo systemctl restart llm-manager-agent
+```
+
+The agent only reads `/api/version` and `/api/ps`; it never loads or runs models. "No models loaded" is normal when Ollama is idle, because Ollama unloads models after a few minutes.
+
+Tests: `python -m unittest agent/test_agent.py` (needs psutil).
+
 ## Not yet included
 
-Ollama status/models, AMD GPU and VRAM, and temperatures are planned and are not collected yet.
+AMD GPU and VRAM, and temperatures, are planned and are not collected yet.

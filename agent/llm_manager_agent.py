@@ -13,6 +13,7 @@ Configuration (environment variables, usually from a systemd EnvironmentFile):
   LLM_MANAGER_SERVER_ID  server UUID from the server's page     (required to send)
   LLM_MANAGER_INTERVAL   seconds between reports (default 30)
   LLM_MANAGER_DISK_PATH  mount point to report (default /)
+  LLM_MANAGER_OLLAMA_URL Ollama API base, e.g. http://127.0.0.1:11434 (default: Ollama monitoring off)
 
 Usage:
   llm_manager_agent.py --dry-run     print one reading, send nothing
@@ -37,7 +38,7 @@ import uuid
 
 import psutil
 
-AGENT_VERSION = "0.1.0"
+AGENT_VERSION = "0.2.0"
 DEFAULT_INTERVAL = 30.0
 REQUEST_TIMEOUT = 10.0
 WARMUP_SECONDS = 3.0
@@ -96,7 +97,60 @@ class NetworkRate:
         return round(d_rx / elapsed, 1), round(d_tx / elapsed, 1)
 
 
-def collect(net: NetworkRate, disk_path: str, cpu_interval: float | None = None) -> dict:
+def _get_json(url: str, timeout: float = 3.0):
+    req = urllib.request.Request(url, headers={"User-Agent": f"llm-manager-agent/{AGENT_VERSION}"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        if resp.status != 200:
+            raise ValueError(f"HTTP {resp.status}")
+        return json.load(resp)
+
+
+def _text(value, limit: int):
+    return value[:limit] if isinstance(value, str) and value else None
+
+
+def _int(value):
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def collect_ollama(base_url: str) -> dict:
+    """Ollama status and currently loaded models.
+
+    ollama_up is True/False when Ollama monitoring is configured (False means the
+    API did not answer). Models are None when unavailable, [] when nothing is
+    loaded. Everything is None when monitoring is not configured.
+    """
+    if not base_url:
+        return {"ollama_up": None, "ollama_version": None, "ollama_models": None}
+    base = base_url.rstrip("/")
+    try:
+        version = _get_json(f"{base}/api/version").get("version")
+    except Exception as exc:  # noqa: BLE001 - refused, timeout, bad JSON: service not answering
+        log.debug("ollama not answering: %s", exc)
+        return {"ollama_up": False, "ollama_version": None, "ollama_models": None}
+
+    models = None
+    try:
+        raw = _get_json(f"{base}/api/ps").get("models") or []
+        models = []
+        for m in raw[:20]:
+            details = m.get("details") or {}
+            models.append(
+                {
+                    "name": _text(m.get("name") or m.get("model"), 100) or "unknown",
+                    "size_bytes": _int(m.get("size")),
+                    "size_vram_bytes": _int(m.get("size_vram")),
+                    "parameter_size": _text(details.get("parameter_size"), 32),
+                    "quantization": _text(details.get("quantization_level"), 32),
+                    "expires_at": _text(m.get("expires_at"), 64),
+                }
+            )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("ollama model list unavailable: %s", exc)
+    return {"ollama_up": True, "ollama_version": _text(version, 32), "ollama_models": models}
+
+
+def collect(net: NetworkRate, disk_path: str, cpu_interval: float | None = None, ollama_url: str = "") -> dict:
     """Gather one reading. Each metric fails independently to None."""
     metrics: dict = {"agent_version": AGENT_VERSION}
 
@@ -128,6 +182,7 @@ def collect(net: NetworkRate, disk_path: str, cpu_interval: float | None = None)
     except Exception:  # noqa: BLE001
         metrics["uptime_seconds"] = None
 
+    metrics.update(collect_ollama(ollama_url))
     return metrics
 
 
@@ -180,6 +235,7 @@ def load_config() -> dict:
         "server_id": os.environ.get("LLM_MANAGER_SERVER_ID", ""),
         "interval": os.environ.get("LLM_MANAGER_INTERVAL", str(DEFAULT_INTERVAL)),
         "disk_path": os.environ.get("LLM_MANAGER_DISK_PATH", "/"),
+        "ollama_url": os.environ.get("LLM_MANAGER_OLLAMA_URL", "").strip(),
     }
     try:
         cfg["interval"] = max(10.0, float(cfg["interval"]))  # server rate-limits below 5 s
@@ -209,7 +265,7 @@ def main() -> int:
 
     if args.dry_run:
         time.sleep(WARMUP_SECONDS)  # gives CPU and network a real measurement window
-        print(json.dumps({"server_id": cfg["server_id"] or "<unset>", "metrics": collect(net, cfg["disk_path"])}, indent=2))
+        print(json.dumps({"server_id": cfg["server_id"] or "<unset>", "metrics": collect(net, cfg["disk_path"], ollama_url=cfg["ollama_url"])}, indent=2))
         return 0
 
     missing = [n for n, k in (("LLM_MANAGER_API_URL", "url"), ("LLM_MANAGER_TOKEN", "token"), ("LLM_MANAGER_SERVER_ID", "server_id")) if not cfg[k]]
@@ -220,6 +276,8 @@ def main() -> int:
         validate_url(cfg["url"])
         check_not_placeholder(cfg)
         uuid.UUID(cfg["server_id"])
+        if cfg["ollama_url"] and urllib.parse.urlparse(cfg["ollama_url"]).scheme not in ("http", "https"):
+            raise ValueError("LLM_MANAGER_OLLAMA_URL must start with http:// or https://")
     except ValueError as exc:
         log.error("invalid configuration: %s", exc)
         return 2
@@ -233,7 +291,7 @@ def main() -> int:
 
     def report() -> bool:
         nonlocal failing
-        ok, message = send(cfg["url"], cfg["token"], cfg["server_id"], collect(net, cfg["disk_path"]))
+        ok, message = send(cfg["url"], cfg["token"], cfg["server_id"], collect(net, cfg["disk_path"], ollama_url=cfg["ollama_url"]))
         if ok:
             if failing or args.verbose:
                 log.info("report sent (%s)", message)

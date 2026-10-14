@@ -51,6 +51,30 @@ describe("POST /api/telemetry", () => {
     expect(sent.disk_percent).toBeNull();
   });
 
+  it("passes Ollama status and loaded models through to the database", async () => {
+    const models = [{ name: "llama3:8b", size_bytes: 6, size_vram_bytes: 5, parameter_size: "8B", quantization: "Q4_0" }];
+    await POST(req({ body: { server_id: SERVER_ID, metrics: { ollama_up: true, ollama_version: "0.12.3", ollama_models: models } } }));
+    const sent = rpc.mock.calls[0][1].p_metrics;
+    expect(sent.ollama_up).toBe(true);
+    expect(sent.ollama_version).toBe("0.12.3");
+    expect(sent.ollama_models).toEqual([expect.objectContaining({ name: "llama3:8b", size_vram_bytes: 5 })]);
+  });
+
+  it("sends Ollama as null (not monitored) when the agent does not report it", async () => {
+    await POST(req());
+    const sent = rpc.mock.calls[0][1].p_metrics;
+    expect(sent.ollama_up).toBeNull();
+    expect(sent.ollama_models).toBeNull();
+  });
+
+  it("accepts a full 20-model report within the size limit", async () => {
+    const models = Array.from({ length: 20 }, (_, i) => ({
+      name: `model-${i}-`.padEnd(100, "x"), size_bytes: 1, size_vram_bytes: 1, parameter_size: "p".repeat(32), quantization: "q".repeat(32), expires_at: "e".repeat(64),
+    }));
+    const res = await POST(req({ body: { server_id: SERVER_ID, metrics: { ollama_up: true, ollama_models: models } } }));
+    expect(res.status).toBe(200);
+  });
+
   it.each([
     ["missing token", null],
     ["malformed token", "garbage"],

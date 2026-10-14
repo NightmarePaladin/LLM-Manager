@@ -5,8 +5,9 @@ import { ArrowLeft, Pencil, Trash2 } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { MonitoringBadge } from "@/components/MonitoringBadge";
 import { AutoRefresh } from "@/components/AutoRefresh";
+import { OllamaBadge } from "@/components/OllamaStatus";
 import { AgentTokenPanel } from "@/components/AgentTokenPanel";
-import { formatAge, formatBytes, formatPercent, formatRate, formatUptime } from "@/lib/format";
+import { UNAVAILABLE, formatAge, formatBytes, formatPercent, formatRate, formatUptime } from "@/lib/format";
 import { getLatestMetrics } from "@/lib/metrics";
 import { REFRESH_INTERVAL_MS, monitoringState } from "@/lib/telemetry";
 import { revokeAgentTokens } from "@/app/(app)/servers/agent-actions";
@@ -112,6 +113,56 @@ export default async function ServerDetailPage({
           </dl>
         )}
       </section>
+
+      {latest?.ollama_up != null && (
+        <section className="card p-5" aria-labelledby="ollama-heading">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 id="ollama-heading" className="text-sm font-semibold">Ollama</h2>
+            <div className="flex items-center gap-3 text-xs text-muted">
+              {latest.ollama_version && <span>Version {latest.ollama_version}</span>}
+              <OllamaBadge metric={latest} />
+            </div>
+          </div>
+          {!latest.ollama_up ? (
+            <p className="mt-3 text-sm text-muted">The Ollama API did not answer on the last report.</p>
+          ) : latest.ollama_models == null ? (
+            <p className="mt-3 text-sm text-muted">Ollama is running, but the loaded model list was unavailable.</p>
+          ) : latest.ollama_models.length === 0 ? (
+            <p className="mt-3 text-sm text-muted">Ollama is running with no models loaded in memory.</p>
+          ) : (
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full min-w-[34rem] text-left text-sm">
+                <thead className="text-xs uppercase tracking-wider text-muted">
+                  <tr className="border-b border-line">
+                    <th className="py-2 pr-4 font-medium">Model</th>
+                    <th className="py-2 pr-4 font-medium">Size</th>
+                    <th className="py-2 pr-4 font-medium">In VRAM</th>
+                    <th className="py-2 font-medium">Parameters / quant</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {latest.ollama_models.map((m) => (
+                    <tr key={m.name}>
+                      <td className="py-2 pr-4 font-mono text-xs text-zinc-100">{m.name}</td>
+                      <td className="py-2 pr-4 tabular-nums text-zinc-300">{formatBytes(m.size_bytes)}</td>
+                      <td className="py-2 pr-4 tabular-nums text-zinc-300">
+                        {m.size_vram_bytes == null
+                          ? UNAVAILABLE
+                          : `${formatBytes(m.size_vram_bytes)}${
+                              m.size_bytes ? ` (${Math.round((m.size_vram_bytes / m.size_bytes) * 100)}%)` : ""
+                            }`}
+                      </td>
+                      <td className="py-2 text-zinc-300">
+                        {[m.parameter_size, m.quantization].filter(Boolean).join(" · ") || UNAVAILABLE}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="card p-5" aria-labelledby="agent-heading">
         <h2 id="agent-heading" className="text-sm font-semibold">Monitoring agent</h2>

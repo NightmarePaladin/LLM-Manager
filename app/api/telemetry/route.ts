@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { hashToken, normaliseMetrics, parseBearer, telemetryBodySchema } from "@/lib/telemetry";
 
-const MAX_BODY_BYTES = 8 * 1024;
+const MAX_BODY_BYTES = 16 * 1024;
 
 const json = (body: Record<string, unknown>, status: number) =>
   Response.json(body, { status, headers: { "Cache-Control": "no-store" } });

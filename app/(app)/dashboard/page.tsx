@@ -3,6 +3,7 @@ import { Activity, CircleCheck, CircleHelp, Clock, Eye, Pencil, Plus, Server as 
 import { requireUser } from "@/lib/auth";
 import { MonitoringBadge } from "@/components/MonitoringBadge";
 import { AutoRefresh } from "@/components/AutoRefresh";
+import { OllamaBadge } from "@/components/OllamaStatus";
 import { formatAge, formatPercent, formatRate, nowMs } from "@/lib/format";
 import { getLatestMetrics } from "@/lib/metrics";
 import { REFRESH_INTERVAL_MS, monitoringState } from "@/lib/telemetry";
@@ -83,12 +84,13 @@ export default async function DashboardPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[64rem] text-left text-sm">
+            <table className="w-full min-w-[72rem] text-left text-sm">
               <thead className="text-xs uppercase tracking-wider text-muted">
                 <tr className="border-b border-line">
                   <th className="px-4 py-3 font-medium">Name</th>
                   <th className="px-4 py-3 font-medium">Host</th>
                   <th className="px-4 py-3 font-medium">Monitoring</th>
+                  <th className="px-4 py-3 font-medium">Ollama</th>
                   <th className="px-4 py-3 font-medium">CPU</th>
                   <th className="px-4 py-3 font-medium">RAM</th>
                   <th className="px-4 py-3 font-medium">Disk</th>
@@ -109,6 +111,9 @@ export default async function DashboardPage() {
                     <td className="px-4 py-3 font-mono text-xs text-zinc-300">{s.hostname}</td>
                     <td className="px-4 py-3">
                       <MonitoringBadge state={state} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <OllamaBadge metric={m} />
                     </td>
                     <td className="px-4 py-3 tabular-nums text-zinc-300">{m ? formatPercent(m.cpu_percent) : "—"}</td>
                     <td className="px-4 py-3 tabular-nums text-zinc-300">{m ? formatPercent(m.ram_percent) : "—"}</td>

@@ -1,3 +1,5 @@
+import type { OllamaModel } from "@/lib/telemetry";
+
 export const SERVER_TYPES = ["physical", "vm", "container", "other"] as const;
 
 export type ServerType = (typeof SERVER_TYPES)[number];
@@ -30,4 +32,7 @@ export type ServerMetric = {
   net_rx_bps: number | null;
   uptime_seconds: number | null;
   agent_version: string | null;
+  ollama_up: boolean | null;
+  ollama_version: string | null;
+  ollama_models: OllamaModel[] | null;
 };
