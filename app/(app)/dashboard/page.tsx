@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Activity, CircleCheck, CircleHelp, Clock, Plus, Server as ServerIcon } from "lucide-react";
+import { Activity, CircleCheck, CircleHelp, Clock, Eye, Pencil, Plus, Server as ServerIcon } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { MonitoringBadge } from "@/components/MonitoringBadge";
 import { AutoRefresh } from "@/components/AutoRefresh";
@@ -83,7 +83,7 @@ export default async function DashboardPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[56rem] text-left text-sm">
+            <table className="w-full min-w-[64rem] text-left text-sm">
               <thead className="text-xs uppercase tracking-wider text-muted">
                 <tr className="border-b border-line">
                   <th className="px-4 py-3 font-medium">Name</th>
@@ -94,6 +94,7 @@ export default async function DashboardPage() {
                   <th className="px-4 py-3 font-medium">Disk</th>
                   <th className="px-4 py-3 font-medium">Network ↓ / ↑</th>
                   <th className="px-4 py-3 font-medium">Last report</th>
+                  <th className="sticky right-0 bg-surface px-4 py-3 text-right font-medium shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.6)]">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
@@ -116,6 +117,18 @@ export default async function DashboardPage() {
                       {m ? `${formatRate(m.net_rx_bps)} / ${formatRate(m.net_tx_bps)}` : "—"}
                     </td>
                     <td className="px-4 py-3 text-xs text-muted">{formatAge(m?.recorded_at, now)}</td>
+                    <td className="sticky right-0 bg-surface px-4 py-3 shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.6)]">
+                      <div className="flex justify-end gap-2">
+                        <Link href={`/servers/${s.id}`} className="btn-secondary px-3 py-1.5" aria-label={`View details for ${s.name}`}>
+                          <Eye className="size-4" aria-hidden />
+                          Details
+                        </Link>
+                        <Link href={`/servers/${s.id}/edit`} className="btn-secondary px-3 py-1.5" aria-label={`Edit ${s.name}`}>
+                          <Pencil className="size-4" aria-hidden />
+                          Edit
+                        </Link>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
