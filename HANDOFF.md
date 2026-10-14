@@ -82,7 +82,7 @@ Linux host -> Python agent (psutil, 30 s) -> HTTPS POST /api/telemetry (Next.js 
 | 7 | AMD GPU/VRAM, CPU/GPU temperatures (optional, graceful when missing) | **Code written, tests pass; NOT applied or verified on real hardware.** Agent 0.3.0 reads amdgpu sysfs (`gpu_busy_percent`, `mem_info_vram_*`, hwmon temps; picks the AMD card with the most VRAM) and psutil CPU sensors; migration `0005_gpu_and_temperatures.sql` (additive columns + updated `ingest_telemetry`) written, dry-run tested inside a rolled-back transaction, **applied to Supabase 2026-10-14** (columns present, grants intact). Verified on real hardware with `--dry-run` on Steve: gpu 1%, VRAM 17.1 GB total, GPU edge 30 C / hotspot 32 C. Steve is a KVM VM, so `cpu_temp_c` is correctly null (no CPU sensors; a Proxmox host agent would expose them). **Verified stored in Supabase from agent 0.3.0 on Steve (2026-10-14 15:57 UTC): gpu_percent 0, VRAM 59.9 MB / 17.1 GB, GPU 29 C, hotspot 32 C, cpu_temp null.** |
 | 8 | Seven-day history charts, retention pruning, more servers (Proxmox hosts, VMs, LXC) | **History charts: deployed code + migration applied; NOT yet seen rendering with real data.** Migration `0006_metric_history.sql` (`get_metric_history`, SECURITY INVOKER so RLS applies; dry-run tested in a rolled-back transaction) **applied 2026-10-14** (SECURITY INVOKER, authenticated only; advisor shows no new warnings); server page shows 1 h / 24 h / 7 d charts (CPU, memory, network, GPU, VRAM, temperatures; gaps for outages; tooltip, keyboard and table view). Retention pruning and more servers: planned |
 
-**Manual status removal (approved 2026-10-14):** app code no longer reads or writes `servers.status`; the StatusBadge was replaced by a monitoring badge derived from reports. The database column still exists (it defaults to `unknown`, so the app keeps working). `supabase/migrations/0003_drop_manual_status.sql` drops it and is **destructive: do not apply without asking the user to confirm at that moment.**
+**Manual status removal: DONE (2026-10-14).** App code stopped using `servers.status` earlier; the user explicitly approved dropping it and `0003_drop_manual_status.sql` was applied on 2026-10-14 (column and `server_status` enum gone; verified nothing depended on it, the 2 existing rows only held the default `unknown`, RLS and the 4 `servers` policies intact, Steve unaffected).
 
 ### Local verification (2026-10-14, localhost only)
 
@@ -102,7 +102,7 @@ Steve (`a568fbb7-a3ab-4337-b6ad-f0cd927af07b`) first reported to the example pla
 
 1. ~~Apply 0005 and 0006~~ Done 2026-10-14.
 2. Update the agent on Steve to 0.3.0 (use a commit-pinned raw URL) and run `--dry-run` there to confirm real GPU/temperature values.
-3. Test data deleted on 2026-10-14 with explicit user approval: auth users `claude-local-test-187fd935`, `rls-a-82b3ad4c`, `rls-b-11e3776f`, `e2e-tester-1` (@example.com) and, by cascade, the `local-test-pc` server with its tokens and metrics. Remaining account: `bob@bob.com` (owns Steve). **Still needs explicit user confirmation:** applying `0003_drop_manual_status.sql`.
+3. Test data deleted on 2026-10-14 with explicit user approval: auth users `claude-local-test-187fd935`, `rls-a-82b3ad4c`, `rls-b-11e3776f`, `e2e-tester-1` (@example.com) and, by cascade, the `local-test-pc` server with its tokens and metrics. Remaining account: `bob@bob.com` (owns Steve). `0003` (drop `servers.status`) was applied with explicit approval.
 4. Retention pruning (about 2,880 rows per server per day) needs a delete job; ask first.
 
 ### Easter egg
@@ -117,6 +117,16 @@ Agent 0.4.0 adds `--config FILE` (KEY=VALUE settings), `--log-file`, Windows def
 
 **Verified:** agent tests (26); `install.sh` under bash against 18 simulated `/etc/os-release` files plus validation, dry-run plan, config merge, local fetch (47 tests); the generated Linux command executed in bash with stubbed curl/sudo (quoting, temp-file download, failure path, cleanup); `install.ps1` really run on this Windows PC with `-SkipTask` (venv, psutil, files, locked-down config, installed agent `--dry-run` using only that config); the generated Windows command run through `iex (irm ...)` up to the administrator check; the dropdown rendered with every option and command checked in the browser (168 vitest tests in total).
 **NOT verified:** `install.sh` on a real Linux machine (package installs per distro, `useradd`, systemd unit, journal check); `install.ps1` scheduled-task registration and winget Python install (needs an elevated shell); that Vercel exposes `VERCEL_GIT_COMMIT_SHA` at runtime (else commands pin to `main`); the dropdown inside the signed-in site; the new GET check in production. Steve still runs agent 0.3.0 from the manual install; re-running the generated command there would upgrade it (idempotent).
+
+### Security review (2026-10-14)
+
+Run against the live Supabase project inside transactions that were rolled back (nothing persisted):
+- `supabase/tests/security_suite.sql` (re-runnable; simulates two tenants and the anon role with real RLS): **43 behavioural checks pass** (tenant isolation, write protection, anon access, agent token flow incl. revoked/unknown/foreign tokens and rate limit, hostile payloads, integrity). **25 hardening checks fail by design** until `0007`: Supabase's default grants give `anon`/`authenticated` ALL privileges (incl. TRUNCATE, which bypasses RLS) on `servers`, `agent_tokens`, `server_metrics`. Not reachable through the API; defense in depth only.
+- `supabase/migrations/0007_least_privilege_grants.sql` fixes that (anon: no table access; authenticated: CRUD on servers/agent_tokens, SELECT only on server_metrics). Dry-run in a rolled-back transaction: **all checks pass (48/48)** including add/edit/delete server, generate/revoke token, charts, and the agent ingest path. **NOT applied: needs the user's go-ahead** (permission change).
+- Supabase advisors: security shows only the 3 expected warnings (`ingest_telemetry` executable by anon/authenticated is intentional; leaked-password protection is a dashboard toggle for the user); performance clean.
+- `npm audit`: 0 vulnerabilities in production dependencies; 5 high in dev-only lint tooling (`eslint-config-next` chain: braces/micromatch/fast-glob ReDoS), not shipped.
+- Repo scan: no env files, keys, service-role or real agent tokens in tracked files or git history.
+- Production probes: signed-out routes redirect, telemetry rejects missing/wrong tokens (401), oversize (413), HTTP redirects to HTTPS with HSTS. Missing browser headers found and fixed in `next.config.ts` (nosniff, X-Frame-Options DENY, Referrer-Policy, Permissions-Policy, COOP, no `X-Powered-By`); verified on a local production build, **to be verified on the deployed site after this push**. No CSP yet (needs nonces for Next inline scripts; future work).
 
 ### Known constraints and issues
 
