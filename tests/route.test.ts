@@ -4,7 +4,7 @@ import { generateToken, hashToken } from "@/lib/telemetry";
 const rpc = vi.fn();
 vi.mock("@supabase/supabase-js", () => ({ createClient: () => ({ rpc }) }));
 
-import { POST } from "@/app/api/telemetry/route";
+import { GET, POST } from "@/app/api/telemetry/route";
 
 const SERVER_ID = "3f2b8c1e-5a4d-4e6f-9b7a-1c2d3e4f5a6b";
 const token = generateToken();
@@ -29,6 +29,25 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+});
+
+describe("GET /api/telemetry (installer connectivity check)", () => {
+  it("answers ok without touching the database or requiring a token", async () => {
+    const res = await GET();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, service: "llm-manager" });
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("exposes only a well-formed commit hash, or null", async () => {
+    vi.stubEnv("VERCEL_GIT_COMMIT_SHA", "0123456789abcdef0123456789abcdef01234567");
+    expect((await (await GET()).json()).ref).toBe("0123456789abcdef0123456789abcdef01234567");
+    vi.stubEnv("VERCEL_GIT_COMMIT_SHA", "not-a-sha; drop table");
+    expect((await (await GET()).json()).ref).toBeNull();
+    vi.stubEnv("VERCEL_GIT_COMMIT_SHA", "");
+    expect((await (await GET()).json()).ref).toBeNull();
+  });
 });
 
 describe("POST /api/telemetry", () => {

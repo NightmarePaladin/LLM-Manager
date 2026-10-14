@@ -37,6 +37,8 @@ export default async function ServerDetailPage({
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
   const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   const apiUrl = `${proto}://${host}/api/telemetry`;
+  // The commit this dashboard was built from: install commands pin to it so they match this version.
+  const agentRef = process.env.VERCEL_GIT_COMMIT_SHA ?? null;
   const { data } = await supabase.from("servers").select("*").eq("id", id).maybeSingle<Server>();
   if (!data) notFound(); // another user's server also looks like this: RLS hides it
 
@@ -200,7 +202,7 @@ export default async function ServerDetailPage({
           Active tokens: {tokens?.length ?? 0}. Generating a token does not revoke existing ones.
         </p>
         <div className="mt-4 space-y-4">
-          <AgentTokenPanel serverId={id} apiUrl={apiUrl} />
+          <AgentTokenPanel serverId={id} apiUrl={apiUrl} agentRef={agentRef} />
           {(tokens?.length ?? 0) > 0 && (
             <form action={revokeAgentTokens.bind(null, id)}>
               <button type="submit" className="btn-secondary">Revoke all tokens</button>

@@ -1,0 +1,7 @@
+# Keep installers and the agent on Unix line endings even when checked out on Windows:
+# they are downloaded and executed on Linux.
+*.sh text eol=lf
+*.service text eol=lf
+agent/*.py text eol=lf
+agent/*.ps1 text eol=lf
+agent/*.txt text eol=lf

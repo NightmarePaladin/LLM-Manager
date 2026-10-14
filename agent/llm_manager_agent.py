@@ -5,9 +5,10 @@ Collects CPU, RAM, disk, network, CPU/GPU temperature and AMD GPU/VRAM readings 
 LLM-Manager ingestion endpoint every 30 seconds. Unavailable metrics are sent as
 null, never as zero. The agent only holds its own per-server token: it has no
 Supabase credentials. Works on standard Linux, Proxmox VE hosts, VMs and LXC
-containers without root.
+containers without root, and on Windows (CPU, RAM, disk and network).
 
-Configuration (environment variables, usually from a systemd EnvironmentFile):
+Configuration (environment variables, a systemd EnvironmentFile, or a KEY=VALUE
+file passed with --config; real environment variables win over the file):
   LLM_MANAGER_API_URL    https://<your-domain>/api/telemetry   (required to send)
   LLM_MANAGER_TOKEN      agent token from the server's page     (required to send)
   LLM_MANAGER_SERVER_ID  server UUID from the server's page     (required to send)
@@ -19,6 +20,7 @@ Usage:
   llm_manager_agent.py --dry-run     print one reading, send nothing
   llm_manager_agent.py --once        send one reading and exit
   llm_manager_agent.py               run forever
+  Options: --config FILE (KEY=VALUE settings), --log-file FILE (rotating log), -v
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ import argparse
 import glob
 import json
 import logging
+import logging.handlers
 import os
 import re
 import signal
@@ -40,12 +43,22 @@ import uuid
 
 import psutil
 
-AGENT_VERSION = "0.3.0"
+AGENT_VERSION = "0.4.0"
 DEFAULT_INTERVAL = 30.0
 REQUEST_TIMEOUT = 10.0
 WARMUP_SECONDS = 3.0
 # Used only when no physical NIC is found (e.g. inside an LXC container).
-VIRTUAL_NIC_PREFIXES = ("lo", "docker", "br-", "virbr", "veth", "tap", "fwbr", "fwpr", "fwln", "vmbr", "bond")
+VIRTUAL_NIC_PREFIXES = (
+    "docker", "br-", "virbr", "veth", "tap", "fwbr", "fwpr", "fwln", "vmbr", "bond",
+    "loopback", "isatap", "teredo", "6to4", "vethernet", "wsl",  # Windows pseudo/virtual adapters
+)
+
+
+def _is_virtual_nic(name: str) -> bool:
+    lowered = name.lower()
+    return lowered == "lo" or lowered.startswith(VIRTUAL_NIC_PREFIXES)  # "lo" is exact: "Local Area Connection" is real
+WINDOWS = os.name == "nt"
+DEFAULT_WINDOWS_CONFIG = os.path.join(os.environ.get("ProgramData", r"C:\ProgramData"), "LLM-Manager-Agent", "agent.env")
 
 log = logging.getLogger("llm-manager-agent")
 
@@ -65,7 +78,7 @@ def _nic_names() -> list[str]:
     physical = [n for n in names if os.path.exists(f"/sys/class/net/{n}/device")]
     if physical:
         return physical
-    return [n for n in names if not n.startswith(VIRTUAL_NIC_PREFIXES)]
+    return [n for n in names if not _is_virtual_nic(n)]
 
 
 class NetworkRate:
@@ -348,13 +361,36 @@ def send(url: str, token: str, server_id: str, metrics: dict) -> tuple[bool, str
         return False, f"{type(exc).__name__}: {exc}"
 
 
+def load_env_file(path: str) -> int:
+    """Load KEY=VALUE lines into os.environ without overriding variables already set.
+
+    Used for --config and on Windows, where there is no systemd EnvironmentFile.
+    Blank lines and # comments are skipped; matching single or double quotes are removed.
+    Returns the number of variables set.
+    """
+    count = 0
+    with open(path, encoding="utf-8-sig") as fh:  # utf-8-sig tolerates a Windows BOM
+        for raw in fh:
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key, value = key.strip(), value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+                value = value[1:-1]
+            if key and key not in os.environ:
+                os.environ[key] = value
+                count += 1
+    return count
+
+
 def load_config() -> dict:
     cfg = {
         "url": os.environ.get("LLM_MANAGER_API_URL", ""),
         "token": os.environ.get("LLM_MANAGER_TOKEN", ""),
         "server_id": os.environ.get("LLM_MANAGER_SERVER_ID", ""),
         "interval": os.environ.get("LLM_MANAGER_INTERVAL", str(DEFAULT_INTERVAL)),
-        "disk_path": os.environ.get("LLM_MANAGER_DISK_PATH", "/"),
+        "disk_path": os.environ.get("LLM_MANAGER_DISK_PATH") or (os.environ.get("SystemDrive", "C:") + "\\" if WINDOWS else "/"),
         "ollama_url": os.environ.get("LLM_MANAGER_OLLAMA_URL", "").strip(),
     }
     try:
@@ -369,9 +405,22 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="print one reading and exit without sending")
     parser.add_argument("--once", action="store_true", help="send one reading and exit")
     parser.add_argument("-v", "--verbose", action="store_true", help="log every successful report")
+    parser.add_argument("--config", metavar="FILE", help="KEY=VALUE settings file (default on Windows: %%ProgramData%%\\LLM-Manager-Agent\\agent.env)")
+    parser.add_argument("--log-file", metavar="FILE", help="also log to this file (rotating, 1 MB x 3)")
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stdout)
+    handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
+    if args.log_file:
+        handlers.append(logging.handlers.RotatingFileHandler(args.log_file, maxBytes=1_000_000, backupCount=3, encoding="utf-8"))
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", handlers=handlers)
+
+    config_path = args.config or os.environ.get("LLM_MANAGER_CONFIG") or (DEFAULT_WINDOWS_CONFIG if WINDOWS and os.path.exists(DEFAULT_WINDOWS_CONFIG) else None)
+    if config_path:
+        try:
+            load_env_file(config_path)
+        except OSError as exc:
+            log.error("cannot read config file %s: %s", config_path, exc)
+            return 2
 
     try:
         cfg = load_config()

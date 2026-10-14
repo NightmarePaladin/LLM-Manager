@@ -222,5 +222,86 @@ class CollectIncludesOllama(unittest.TestCase):
             self.assertIn(key, m)
 
 
+class ConfigFile(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir, True)
+        self.path = os.path.join(self.dir, "agent.env")
+
+    def write(self, text):
+        with open(self.path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+
+    def test_loads_keys_skips_comments_and_strips_quotes(self):
+        self.write('# comment\n\nLLM_TEST_A=plain\nLLM_TEST_B="quoted value"\nLLM_TEST_C=\'single\'\nnot a setting\n  LLM_TEST_D = spaced  \n')
+        with mock.patch.dict(os.environ, {}, clear=False):
+            for k in ("LLM_TEST_A", "LLM_TEST_B", "LLM_TEST_C", "LLM_TEST_D"):
+                os.environ.pop(k, None)
+            self.assertEqual(agent.load_env_file(self.path), 4)
+            self.assertEqual(os.environ["LLM_TEST_A"], "plain")
+            self.assertEqual(os.environ["LLM_TEST_B"], "quoted value")
+            self.assertEqual(os.environ["LLM_TEST_C"], "single")
+            self.assertEqual(os.environ["LLM_TEST_D"], "spaced")
+            for k in ("LLM_TEST_A", "LLM_TEST_B", "LLM_TEST_C", "LLM_TEST_D"):
+                os.environ.pop(k, None)
+
+    def test_real_environment_wins_over_the_file(self):
+        self.write("LLM_TEST_E=from-file\n")
+        with mock.patch.dict(os.environ, {"LLM_TEST_E": "from-env"}):
+            self.assertEqual(agent.load_env_file(self.path), 0)
+            self.assertEqual(os.environ["LLM_TEST_E"], "from-env")
+
+    def test_tolerates_a_windows_bom_and_crlf(self):
+        with open(self.path, "wb") as fh:
+            fh.write(b"\xef\xbb\xbfLLM_TEST_F=bom-ok\r\nLLM_TEST_G=crlf-ok\r\n")
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("LLM_TEST_F", None)
+            os.environ.pop("LLM_TEST_G", None)
+            agent.load_env_file(self.path)
+            self.assertEqual(os.environ["LLM_TEST_F"], "bom-ok")
+            self.assertEqual(os.environ["LLM_TEST_G"], "crlf-ok")
+            os.environ.pop("LLM_TEST_F", None)
+            os.environ.pop("LLM_TEST_G", None)
+
+    def test_missing_file_raises(self):
+        with self.assertRaises(OSError):
+            agent.load_env_file(os.path.join(self.dir, "nope.env"))
+
+    def test_cli_config_file_feeds_the_agent_end_to_end(self):
+        """--config + placeholder guard + log file, run as a real subprocess."""
+        import subprocess
+
+        log_path = os.path.join(self.dir, "agent.log")
+        self.write("LLM_MANAGER_API_URL=https://your-production-domain.vercel.app/api/telemetry\n"
+                   "LLM_MANAGER_SERVER_ID=a568fbb7-a3ab-4337-b6ad-f0cd927af07b\nLLM_MANAGER_TOKEN=lmt_" + "A" * 43 + "\n")
+        env = {k: v for k, v in os.environ.items() if not k.startswith("LLM_MANAGER_")}
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "llm_manager_agent.py")
+        done = subprocess.run([sys.executable, script, "--config", self.path, "--log-file", log_path, "--once"],
+                              env=env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 2)  # placeholder URL refused: nothing was sent
+        self.assertIn("placeholder", done.stdout + done.stderr)
+        with open(log_path, encoding="utf-8") as fh:
+            self.assertIn("placeholder", fh.read())  # --log-file received it too
+        self.assertNotIn("A" * 43, done.stdout + done.stderr)  # the token is never logged
+
+    def test_cli_missing_config_file_exits_2(self):
+        import subprocess
+
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "llm_manager_agent.py")
+        done = subprocess.run([sys.executable, script, "--config", os.path.join(self.dir, "nope.env"), "--once"],
+                              capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("cannot read config file", done.stdout + done.stderr)
+
+
+class NicClassification(unittest.TestCase):
+    def test_virtual_adapters_are_excluded_but_real_ones_are_kept(self):
+        for name in ("lo", "docker0", "br-1a2b", "veth123", "vmbr0", "tap100i0", "Loopback Pseudo-Interface 1",
+                     "vEthernet (WSL)", "isatap.home", "Teredo Tunneling Pseudo-Interface", "TAP-Windows Adapter V9"):
+            self.assertTrue(agent._is_virtual_nic(name), name)
+        for name in ("eth0", "enp5s0", "wlan0", "eno1", "Ethernet", "Wi-Fi", "Local Area Connection", "Local Area Connection* 10"):
+            self.assertFalse(agent._is_virtual_nic(name), name)
+
+
 if __name__ == "__main__":
     unittest.main()

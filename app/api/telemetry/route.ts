@@ -7,6 +7,15 @@ const json = (body: Record<string, unknown>, status: number) =>
   Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 
 /**
+ * Connectivity check for installers: confirms this URL is an LLM-Manager dashboard.
+ * Public and read-only; it reveals nothing beyond the (public) commit this build came from.
+ */
+export async function GET() {
+  const ref = process.env.VERCEL_GIT_COMMIT_SHA;
+  return json({ ok: true, service: "llm-manager", ref: ref && /^[0-9a-f]{40}$/.test(ref) ? ref : null }, 200);
+}
+
+/**
  * Agent ingestion. Auth is a per-server bearer token; the DB function
  * ingest_telemetry() verifies its hash and inserts for that server only.
  * Uses the same publishable key as the rest of the app: no privileged key.
