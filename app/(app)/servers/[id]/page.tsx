@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { headers } from "next/headers";
 import { ArrowLeft, Pencil, Trash2 } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { MonitoringBadge } from "@/components/MonitoringBadge";
@@ -26,6 +27,12 @@ export default async function ServerDetailPage({
   if (!UUID_RE.test(id)) notFound();
 
   const { supabase } = await requireUser();
+
+  // Absolute ingestion URL for the agent config, from whichever domain the user is on.
+  const h = await headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
+  const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
+  const apiUrl = `${proto}://${host}/api/telemetry`;
   const { data } = await supabase.from("servers").select("*").eq("id", id).maybeSingle<Server>();
   if (!data) notFound(); // another user's server also looks like this: RLS hides it
 
@@ -111,8 +118,8 @@ export default async function ServerDetailPage({
         <p className="mt-1 text-sm text-muted">
           Active tokens: {tokens?.length ?? 0}. Generating a token does not revoke existing ones.
         </p>
-        <div className="mt-4 flex flex-wrap items-start gap-3">
-          <AgentTokenPanel serverId={id} />
+        <div className="mt-4 space-y-4">
+          <AgentTokenPanel serverId={id} apiUrl={apiUrl} />
           {(tokens?.length ?? 0) > 0 && (
             <form action={revokeAgentTokens.bind(null, id)}>
               <button type="submit" className="btn-secondary">Revoke all tokens</button>
