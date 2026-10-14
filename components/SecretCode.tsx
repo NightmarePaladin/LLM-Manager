@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { KeyRound, X } from "lucide-react";
+import { KeyRound } from "lucide-react";
 import { isSecretCode, nonsenseLine } from "@/lib/prank";
 
 const MAX_LINES = 80;
@@ -55,7 +55,7 @@ export function SecretCode() {
 
 function HackingScreen({ onClose }: { onClose: () => void }) {
   const [lines, setLines] = useState<string[]>([]);
-  const closeRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -65,7 +65,7 @@ function HackingScreen({ onClose }: { onClose: () => void }) {
     );
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
-    closeRef.current?.focus();
+    dialogRef.current?.focus();
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
@@ -77,25 +77,16 @@ function HackingScreen({ onClose }: { onClose: () => void }) {
 
   return (
     <div
+      ref={dialogRef}
+      tabIndex={-1}
       role="dialog"
       aria-modal="true"
       aria-label="Hacking the Pentagon (a joke)"
-      className="fixed inset-0 z-50 flex flex-col bg-black p-4 font-mono text-green-400 sm:p-8"
+      className="fixed inset-0 z-50 flex flex-col bg-black p-4 font-mono text-green-400 outline-none sm:p-8"
     >
-      <div className="flex items-start justify-between gap-4">
-        <h2 className="text-2xl font-bold tracking-wider sm:text-4xl">
-          Hacking the Pentagon<span className="motion-safe:animate-pulse">...</span>
-        </h2>
-        <button
-          ref={closeRef}
-          type="button"
-          onClick={onClose}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-green-700 px-3 py-1.5 text-xs text-green-300 hover:bg-green-900/40 focus-visible:outline-2 focus-visible:outline-green-400"
-        >
-          <X className="size-4" aria-hidden />
-          Exit
-        </button>
-      </div>
+      <h2 className="text-2xl font-bold tracking-wider sm:text-4xl">
+        Hacking the Pentagon<span className="motion-safe:animate-pulse">...</span>
+      </h2>
 
       <div className="mt-6 flex min-h-0 flex-1 flex-col justify-end overflow-hidden text-xs leading-5 sm:text-sm" aria-hidden>
         {lines.map((line, i) => (
