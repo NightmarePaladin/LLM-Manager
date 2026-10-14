@@ -1,0 +1,21 @@
+[Unit]
+Description=LLM-Manager monitoring agent
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+# Token and server id live here (chmod 600, root-owned); systemd reads it as root.
+EnvironmentFile=/etc/llm-manager-agent.env
+ExecStart=/opt/llm-manager-agent/venv/bin/python /opt/llm-manager-agent/llm_manager_agent.py
+Restart=always
+RestartSec=10
+User=llm-agent
+Group=llm-agent
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

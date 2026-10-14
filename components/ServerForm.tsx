@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { SERVER_STATUSES, SERVER_TYPES, type Server } from "@/lib/types";
+import { SERVER_TYPES, type Server } from "@/lib/types";
 
 export function ServerForm({
   action,
@@ -41,18 +41,6 @@ export function ServerForm({
             {SERVER_TYPES.map((t) => (
               <option key={t} value={t}>
                 {t}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label htmlFor="status" className="label">
-            Status
-          </label>
-          <select id="status" name="status" defaultValue={server?.status ?? "unknown"} className="input capitalize">
-            {SERVER_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
               </option>
             ))}
           </select>

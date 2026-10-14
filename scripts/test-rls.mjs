@@ -37,7 +37,7 @@ const anon = newClient();
 // A creates a server (owner_id comes from the column default).
 const ins = await a.client
   .from("servers")
-  .insert({ name: "rls-a-server", hostname: "10.0.0.1", type: "vm", status: "online" })
+  .insert({ name: "rls-a-server", hostname: "10.0.0.1", type: "vm" })
   .select()
   .single();
 check("A can insert own server", !ins.error && ins.data?.owner_id === a.id, ins.error?.message);
@@ -76,8 +76,8 @@ check("Anonymous sees no rows", !anonSel.error && anonSel.data.length === 0);
 const anonIns = await anon.from("servers").insert({ name: "anon", hostname: "x" });
 check("Anonymous cannot insert", !!anonIns.error, anonIns.error?.code);
 
-const aUpd = await a.client.from("servers").update({ status: "offline" }).eq("id", serverId).select().single();
-check("A can update own server; updated_at advances", aUpd.data?.status === "offline" && aUpd.data.updated_at > aUpd.data.created_at, aUpd.error?.message);
+const aUpd = await a.client.from("servers").update({ os: "updated-os" }).eq("id", serverId).select().single();
+check("A can update own server; updated_at advances", aUpd.data?.os === "updated-os" && aUpd.data.updated_at > aUpd.data.created_at, aUpd.error?.message);
 
 const aDel = await a.client.from("servers").delete().eq("id", serverId).select();
 check("A can delete own server", !aDel.error && aDel.data.length === 1);

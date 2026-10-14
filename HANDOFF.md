@@ -74,26 +74,28 @@ Linux host -> Python agent (psutil, 30 s) -> HTTPS POST /api/telemetry (Next.js 
 | # | Milestone | State |
 |---|---|---|
 | 1 | Docs: HANDOFF.md and CLAUDE.md updated, repo inspected, plan written | Done |
-| 2 | Backend: migration 0002, `/api/telemetry`, token generation UI, tests | Not started (awaiting user approval) |
-| 3 | Python agent (CPU/RAM/disk/network, dry-run, systemd unit, requirements.txt, install docs) | Not started |
-| 4 | Dashboard: latest readings, last report, online/stale badge, 30 s refresh | Not started |
-| 5 | Verification: tests, invalid-token rejection, production build, Steve end to end | Not started |
+| 2 | Backend code: migration `0002`, `/api/telemetry`, token generation UI, unit tests, `scripts/test-ingest.mjs` | **Code written and committed locally. Unit tests (7), lint, tsc and build pass. NOT yet verified against the real database: migration 0002 is not applied and `npm run test:ingest` has not been run** |
+| 3 | Python agent (`agent/`): CPU/RAM/disk/network, dry-run, systemd unit, requirements, install docs | **Written. Verified locally on Windows against a mock HTTP endpoint (dry-run, send, wrong token, http refusal, missing config, unreachable). NOT yet run on Steve or against the real API** |
+| 4 | Dashboard: latest readings, last report, online/stale badge, 30 s refresh | **Code written, builds. NOT yet seen rendering with real data** |
+| 5 | Verification: apply 0002, run `test:ingest`, Steve end to end, invalid-token rejection on production, deploy | Not started |
 | 6 | Ollama status and loaded models | Planned |
 | 7 | AMD GPU/VRAM, CPU/GPU temperatures (optional, graceful when missing) | Planned |
 | 8 | Seven-day history charts, retention pruning, more servers (Proxmox hosts, VMs, LXC) | Planned |
 
+**Manual status removal (approved 2026-10-14):** app code no longer reads or writes `servers.status`; the StatusBadge was replaced by a monitoring badge derived from reports. The database column still exists (it defaults to `unknown`, so the app keeps working). `supabase/migrations/0003_drop_manual_status.sql` drops it and is **destructive: do not apply without asking the user to confirm at that moment.**
+
 ### Known constraints and issues
 
-- **Node.js/npm are not installed on the dev machine** (checked 2026-10-14). `npm run lint`, `tsc`, `build` and tests cannot run locally until Node is installed. Python 3.12 is available.
-- Migration `0002` must be applied by the user in the Supabase SQL editor (Claude sessions have no Supabase access). Rule 2 still applies: the migration is additive only.
+- Node 24 LTS was installed on the dev machine on 2026-10-14 (winget). On Windows, open a new shell or refresh PATH if `node` is not found. `npm test` runs the unit tests; `npm run test:ingest` and `test:rls` need `.env.local` and are run by the user.
+- Migration `0002` must be applied to Supabase (SQL editor, or via the Supabase connector once the user enables it; confirm before applying). Rule 2 still applies: the migration is additive only.
 - Steve-side steps (install agent, create token, run the systemd service) and any check on the deployed site are done by the user (rules 1 and 4).
-- Dashboard still says "Status is set manually. Automated monitoring is a future feature." Change that copy only when monitoring is verified.
+- Dashboard subtitle now describes live readings; that wording is only accurate once monitoring is verified end to end.
 - Telemetry volume at 30 s is about 2,880 rows per server per day. Retention pruning is deferred to milestone 8 and needs user approval (deletes).
 
 ### Required configuration (once implemented)
 
 - Vercel/Supabase: no new env vars expected (existing `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`).
-- Agent on Steve: API URL (`https://<production domain>/api/telemetry`), agent token, interval 30 s. Setup instructions will be added here when the agent exists.
+- Agent on Steve: API URL (`https://<production domain>/api/telemetry`), server ID, agent token, interval 30 s. Full setup in `agent/README.md`.
 
 ## Useful commands
 
@@ -109,10 +111,12 @@ npm run test:rls    # user runs this (needs .env.local)
 
 ```
 app/            pages, routes, server actions (auth/, dashboard/, login/, register/, servers/)
-components/     ServerForm, StatusBadge, Brand, NavLinks
+components/     ServerForm, MonitoringBadge, AutoRefresh, AgentTokenPanel, Brand, NavLinks
 lib/            supabase/{server,proxy}.ts, auth.ts, validation.ts, types.ts
 supabase/migrations/   SQL migration
 scripts/test-rls.mjs   two-user RLS check
 proxy.ts        session refresh + route protection
-(planned) agent/ Python monitoring agent; app/api/telemetry/ ingestion route; migration 0002
+agent/          Python monitoring agent, systemd unit, install docs
+app/api/telemetry/  ingestion route
+tests/          unit tests (npm test); scripts/test-ingest.mjs integration check
 ```

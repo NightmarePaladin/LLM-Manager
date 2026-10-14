@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { SERVER_STATUSES, SERVER_TYPES } from "@/lib/types";
+import { SERVER_TYPES } from "@/lib/types";
 
 const optionalText = (max: number) =>
   z
@@ -18,7 +18,6 @@ export const serverSchema = z.object({
   os: optionalText(100),
   type: z.enum(SERVER_TYPES),
   description: optionalText(1000),
-  status: z.enum(SERVER_STATUSES),
 });
 
 export const credentialsSchema = z.object({

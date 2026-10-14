@@ -22,11 +22,11 @@ Styling (Tailwind CSS / shadcn/ui) is planned as the final phase; the UI is curr
 - Register, log in, log out
 - Protected routes: `/dashboard` and `/servers/*` redirect to `/login` when logged out
 - Server inventory: add, list, view details, edit, delete
-- Server fields: name, IP/hostname, OS, type (physical / VM / container / other), description, status (online / offline / unknown), timestamps, owner
+- Server fields: name, IP/hostname, OS, type (physical / VM / container / other), description, timestamps, owner
 - Dashboard counts: total, online, offline, unknown
 - Row Level Security: each user can only see and change their own servers
 
-Status is set manually. There is no automated monitoring.
+Monitoring (in progress, see `HANDOFF.md`): a Python agent in `agent/` reports CPU, RAM, disk and network every 30 s to `/api/telemetry`; the dashboard shows online/stale state from real reports.
 
 ## How it works
 
@@ -36,7 +36,7 @@ Status is set manually. There is no automated monitoring.
 
 ```
 app/            pages, routes and server actions
-components/     ServerForm, StatusBadge
+components/     ServerForm, MonitoringBadge, AutoRefresh, AgentTokenPanel
 lib/            Supabase clients, auth helper, zod schemas, types
 supabase/migrations/   SQL migration (servers table + RLS)
 scripts/test-rls.mjs   two-user RLS verification
@@ -85,7 +85,6 @@ Requirements: Node.js 20+ and a free [Supabase](https://supabase.com) project.
 
 ## Known limitations
 
-- Server status is entered by hand; nothing checks whether a server is actually up.
 - No password reset, email change, or profile pages.
 - No pagination or search on the inventory table.
 - Delete has no confirmation prompt.
@@ -94,7 +93,6 @@ Requirements: Node.js 20+ and a free [Supabase](https://supabase.com) project.
 ## Roadmap (not part of the MVP)
 
 - Visual redesign: dark theme, sidebar, status cards (Tailwind + shadcn/ui)
-- Automated status checks (ping / HTTP)
 - Resource metrics (CPU, RAM, disk, network) and history charts
 - Alerts and notifications
 - Proxmox and Docker integrations

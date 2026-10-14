@@ -1,34 +1,48 @@
 import Link from "next/link";
-import { CircleCheck, CircleHelp, CircleX, Plus, Server as ServerIcon } from "lucide-react";
+import { Activity, CircleCheck, CircleHelp, Clock, Plus, Server as ServerIcon } from "lucide-react";
 import { requireUser } from "@/lib/auth";
-import { StatusBadge } from "@/components/StatusBadge";
+import { MonitoringBadge } from "@/components/MonitoringBadge";
+import { AutoRefresh } from "@/components/AutoRefresh";
+import { formatAge, formatPercent, formatRate, nowMs } from "@/lib/format";
+import { getLatestMetrics } from "@/lib/metrics";
+import { REFRESH_INTERVAL_MS, monitoringState } from "@/lib/telemetry";
 import type { Server } from "@/lib/types";
 
 export default async function DashboardPage() {
   const { supabase, user } = await requireUser();
   const { data, error } = await supabase.from("servers").select("*").order("name").returns<Server[]>();
   const servers = data ?? [];
+  const latest = await getLatestMetrics(supabase, servers.map((s) => s.id));
 
-  // Stats are tallied from the real rows RLS lets this user see.
-  const count = (s: Server["status"]) => servers.filter((x) => x.status === s).length;
+  // Monitoring state comes from the latest real report, never a manual field.
+  const now = nowMs();
+  const rows = servers.map((s) => {
+    const m = latest.get(s.id);
+    return { server: s, metric: m, state: monitoringState(m?.recorded_at, now) };
+  });
+  const count = (state: string) => rows.filter((r) => r.state === state).length;
   const pct = (n: number) => (servers.length === 0 ? "0%" : `${Math.round((n / servers.length) * 100)}%`);
 
   const name = user.email?.split("@")[0] ?? "there";
   const stats = [
     { label: "Total servers", value: servers.length, hint: "All registered servers", icon: ServerIcon, color: "text-zinc-300" },
-    { label: "Online", value: count("online"), hint: `${pct(count("online"))} of servers`, icon: CircleCheck, color: "text-emerald-400" },
-    { label: "Offline", value: count("offline"), hint: `${pct(count("offline"))} of servers`, icon: CircleX, color: "text-red-400" },
-    { label: "Unknown", value: count("unknown"), hint: `${pct(count("unknown"))} of servers`, icon: CircleHelp, color: "text-zinc-400" },
+    { label: "Online", value: count("online"), hint: `${pct(count("online"))} reported in the last 90 s`, icon: CircleCheck, color: "text-emerald-400" },
+    { label: "Stale", value: count("stale"), hint: "No report for 90 s or more", icon: Clock, color: "text-amber-400" },
+    { label: "Not monitored", value: count("not_monitored"), hint: "No agent report yet", icon: CircleHelp, color: "text-zinc-400" },
   ];
 
   return (
     <div className="space-y-6">
+      <AutoRefresh intervalMs={REFRESH_INTERVAL_MS} />
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
             Welcome back, <span className="text-accent">{name}</span>
           </h1>
-          <p className="mt-1 text-sm text-muted">Status is set manually. Automated monitoring is a future feature.</p>
+          <p className="mt-1 flex items-center gap-1.5 text-sm text-muted">
+            <Activity className="size-3.5" aria-hidden />
+            Live readings from monitoring agents. Refreshes every 30 seconds.
+          </p>
         </div>
         <Link href="/servers/new" className="btn-primary">
           <Plus className="size-4" aria-hidden />
@@ -69,30 +83,39 @@ export default async function DashboardPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[40rem] text-left text-sm">
+            <table className="w-full min-w-[56rem] text-left text-sm">
               <thead className="text-xs uppercase tracking-wider text-muted">
                 <tr className="border-b border-line">
                   <th className="px-4 py-3 font-medium">Name</th>
                   <th className="px-4 py-3 font-medium">Host</th>
-                  <th className="px-4 py-3 font-medium">OS</th>
-                  <th className="px-4 py-3 font-medium">Type</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Monitoring</th>
+                  <th className="px-4 py-3 font-medium">CPU</th>
+                  <th className="px-4 py-3 font-medium">RAM</th>
+                  <th className="px-4 py-3 font-medium">Disk</th>
+                  <th className="px-4 py-3 font-medium">Network ↓ / ↑</th>
+                  <th className="px-4 py-3 font-medium">Last report</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
-                {servers.map((s) => (
+                {rows.map(({ server: s, metric: m, state }) => (
                   <tr key={s.id} className="transition-colors hover:bg-surface-2">
                     <td className="px-4 py-3">
                       <Link href={`/servers/${s.id}`} className="font-medium text-zinc-100 hover:text-accent">
                         {s.name}
                       </Link>
+                      <div className="text-xs capitalize text-muted">{s.type}{s.os ? ` · ${s.os}` : ""}</div>
                     </td>
                     <td className="px-4 py-3 font-mono text-xs text-zinc-300">{s.hostname}</td>
-                    <td className="px-4 py-3 text-zinc-300">{s.os ?? "—"}</td>
-                    <td className="px-4 py-3 capitalize text-zinc-300">{s.type}</td>
                     <td className="px-4 py-3">
-                      <StatusBadge status={s.status} />
+                      <MonitoringBadge state={state} />
                     </td>
+                    <td className="px-4 py-3 tabular-nums text-zinc-300">{m ? formatPercent(m.cpu_percent) : "—"}</td>
+                    <td className="px-4 py-3 tabular-nums text-zinc-300">{m ? formatPercent(m.ram_percent) : "—"}</td>
+                    <td className="px-4 py-3 tabular-nums text-zinc-300">{m ? formatPercent(m.disk_percent) : "—"}</td>
+                    <td className="px-4 py-3 tabular-nums text-zinc-300">
+                      {m ? `${formatRate(m.net_rx_bps)} / ${formatRate(m.net_tx_bps)}` : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted">{formatAge(m?.recorded_at, now)}</td>
                   </tr>
                 ))}
               </tbody>
