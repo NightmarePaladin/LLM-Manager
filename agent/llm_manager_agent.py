@@ -140,6 +140,16 @@ def validate_url(url: str) -> str:
     raise ValueError("LLM_MANAGER_API_URL must use https:// (http:// is allowed only for localhost)")
 
 
+PLACEHOLDERS = ("your-production-domain", "paste_token_here", "00000000-0000-0000-0000-000000000000")
+
+
+def check_not_placeholder(cfg: dict) -> None:
+    """Refuse to send credentials anywhere if the example config was not edited."""
+    for key in ("url", "token", "server_id"):
+        if any(p in cfg[key] for p in PLACEHOLDERS):
+            raise ValueError(f"{key} still contains the example placeholder; edit /etc/llm-manager-agent.env")
+
+
 def send(url: str, token: str, server_id: str, metrics: dict) -> tuple[bool, str]:
     """POST one reading. Returns (ok, message). Never includes the token."""
     body = json.dumps({"server_id": server_id, "metrics": metrics}).encode()
@@ -208,6 +218,7 @@ def main() -> int:
         return 2
     try:
         validate_url(cfg["url"])
+        check_not_placeholder(cfg)
         uuid.UUID(cfg["server_id"])
     except ValueError as exc:
         log.error("invalid configuration: %s", exc)
