@@ -72,6 +72,8 @@ The agent logs only failures (and recovery), never the token. Within about a min
 
 ## Troubleshooting
 
+- Updated the agent file but the dashboard still shows the old agent version? GitHub caches raw files for about 5 minutes after a push. Re-download from a commit-pinned URL (replace `main` in the URL with the commit hash), then check the version: `grep -m1 '^AGENT_VERSION' /opt/llm-manager-agent/llm_manager_agent.py`, and restart the service.
+
 - `401`: token revoked/mistyped or wrong Server ID. Generate a new token.
 - `429`: reporting faster than every 5 seconds.
 - Stale in the dashboard: no valid report for 90 s. Check `journalctl -u llm-manager-agent` and network access to the Vercel domain.
